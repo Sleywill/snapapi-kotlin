@@ -133,7 +133,53 @@ class SnapAPI(
         return postJson("/v1/analyze", options)
     }
 
+
+    // ── Video  POST /v1/video ─────────────────────────────────────────────────
+
+    /**
+     * Record a video (WebM/MP4/GIF) of a live webpage.
+     *
+     * Returns raw binary bytes. For structured metadata use [videoResult].
+     *
+     * @throws SnapAPIException on API or network errors.
+     */
+    suspend fun video(options: VideoOptions): ByteArray {
+        require(options.url.isNotBlank()) { "url is required." }
+        return post("/v1/video", options.copy(responseType = "binary"))
+    }
+
+    /**
+     * Record a video and return structured [VideoResult] metadata.
+     *
+     * @throws SnapAPIException on API or network errors.
+     */
+    suspend fun videoResult(options: VideoOptions): VideoResult {
+        require(options.url.isNotBlank()) { "url is required." }
+        return postJson("/v1/video", options.copy(responseType = "json"))
+    }
+
+    // ── Ping  GET /v1/ping ────────────────────────────────────────────────────
+
+    /**
+     * Check API availability.
+     *
+     * @return [PingResult] with status and timestamp.
+     * @throws SnapAPIException on API or network errors.
+     */
+    suspend fun ping(): PingResult = getJson("/v1/ping")
+
+    // ── Account Usage  GET /v1/usage ──────────────────────────────────────────
+
+    /**
+     * Get account-level API usage for the current billing period.
+     *
+     * @return [AccountUsageResult] with used, limit, and remaining counts.
+     * @throws SnapAPIException on API or network errors.
+     */
+    suspend fun usage(): AccountUsageResult = getJson("/v1/usage")
+
     // ── Storage  /v1/storage/* ────────────────────────────────────────────────
+
 
     /** List all stored files. */
     suspend fun listStorageFiles(): StorageFilesResult =

@@ -296,3 +296,70 @@ internal data class ApiErrorResponse(
     val error: String? = null,
     val message: String? = null,
 )
+
+// ─── Video ────────────────────────────────────────────────────────────────────
+
+/** Easing function for scroll animation in video recording. */
+enum class ScrollEasing {
+    linear, ease_in, ease_out, ease_in_out, ease_in_out_quint
+}
+
+/** Output format for video recordings. */
+enum class VideoFormat { webm, mp4, gif }
+
+/** Options for [SnapAPI.video]. */
+@kotlinx.serialization.Serializable
+data class VideoOptions(
+    val url: String,
+    val format: String? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val duration: Int? = null,
+    val fps: Int? = null,
+    val scrolling: Boolean? = null,
+    val scrollSpeed: Int? = null,
+    val scrollDelay: Int? = null,
+    val scrollDuration: Int? = null,
+    val scrollBy: Int? = null,
+    val scrollEasing: String? = null,
+    val scrollBack: Boolean? = null,
+    val scrollComplete: Boolean? = null,
+    val darkMode: Boolean? = null,
+    val blockAds: Boolean? = null,
+    val blockCookieBanners: Boolean? = null,
+    val delay: Int? = null,
+    /** "binary" returns raw bytes; "base64"/"json" returns [VideoResult]. */
+    val responseType: String? = null,
+)
+
+/** Returned by [SnapAPI.videoResult] when responseType is "base64" or "json". */
+@kotlinx.serialization.Serializable
+data class VideoResult(
+    val data: String,
+    val mimeType: String,
+    val format: String,
+    val width: Int,
+    val height: Int,
+    val duration: Int,
+    val size: Int,
+)
+
+// ─── Account Usage ────────────────────────────────────────────────────────────
+
+/** Returned by [SnapAPI.usage]. */
+@kotlinx.serialization.Serializable
+data class AccountUsageResult(
+    val used: Int,
+    val limit: Int,
+    val remaining: Int,
+    val resetAt: String? = null,
+)
+
+// ─── Ping ─────────────────────────────────────────────────────────────────────
+
+/** Returned by [SnapAPI.ping]. */
+@kotlinx.serialization.Serializable
+data class PingResult(
+    val status: String,
+    val timestamp: Long,
+)
