@@ -1,12 +1,20 @@
-# snapapi-kotlin
+# SnapAPI Kotlin SDK
 
-Official Kotlin SDK (v2.0.0) for [SnapAPI](https://snapapi.pics) — lightning-fast screenshot, PDF, scrape, extract, and AI web analysis API.
+[![Kotlin 1.9+](https://img.shields.io/badge/Kotlin-1.9+-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![CI](https://github.com/Sleywill/snapapi-kotlin/actions/workflows/ci.yml/badge.svg)](https://github.com/Sleywill/snapapi-kotlin/actions)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
+
+Official Kotlin SDK for [SnapAPI.pics](https://snapapi.pics) — screenshot, scrape, extract, and PDF generation as a service.
+
+**v3.0.0** — Sealed exception hierarchy, typed enums, retry with exponential backoff.
 
 ## Requirements
 
-- Kotlin 1.9+
-- JVM 11+
-- OkHttp 4 (bundled)
+| Requirement | Minimum |
+|-------------|---------|
+| Kotlin      | 1.9     |
+| JVM         | 11      |
+| Android     | API 21+ |
 
 ## Installation
 
@@ -14,7 +22,7 @@ Official Kotlin SDK (v2.0.0) for [SnapAPI](https://snapapi.pics) — lightning-f
 
 ```kotlin
 dependencies {
-    implementation("pics.snapapi:snapapi-kotlin:2.0.0")
+    implementation("pics.snapapi:snapapi-kotlin:3.0.0")
 }
 ```
 
@@ -24,32 +32,36 @@ dependencies {
 <dependency>
     <groupId>pics.snapapi</groupId>
     <artifactId>snapapi-kotlin</artifactId>
-    <version>2.0.0</version>
+    <version>3.0.0</version>
 </dependency>
 ```
 
-## Quick Start
+## Quickstart
 
 ```kotlin
-import pics.snapapi.SnapAPI
-import pics.snapapi.ScreenshotOptions
+import pics.snapapi.SnapAPIClient
+import pics.snapapi.models.*
 import java.io.File
 
-suspend fun main() {
-    val api = SnapAPI(apiKey = System.getenv("SNAPAPI_KEY"))
+val client = SnapAPIClient(apiKey = "sk_your_key")
 
-    val imageBytes = api.screenshot(
-        ScreenshotOptions(url = "https://example.com", format = "png", fullPage = true)
-    )
-    File("screenshot.png").writeBytes(imageBytes)
-    println("Saved ${imageBytes.size} bytes")
-}
-```
+// Screenshot
+val png = client.screenshot(ScreenshotOptions(url = "https://example.com"))
+File("shot.png").writeBytes(png)
 
-## Authentication
+// Scrape
+val page = client.scrape(ScrapeOptions(url = "https://example.com"))
+println(page.results.firstOrNull()?.data)
 
-```kotlin
-val api = SnapAPI(apiKey = System.getenv("SNAPAPI_KEY") ?: error("No key"))
+// Extract
+val md = client.extractMarkdown("https://example.com")
+
+// PDF
+val pdf = client.pdf(PdfOptions(url = "https://example.com"))
+
+// Quota
+val q = client.quota()
+println("Used: ${q.used}/${q.total}")
 ```
 
 ## Endpoints
@@ -57,215 +69,175 @@ val api = SnapAPI(apiKey = System.getenv("SNAPAPI_KEY") ?: error("No key"))
 ### Screenshot — `POST /v1/screenshot`
 
 ```kotlin
-// Basic PNG
-val png = api.screenshot(
-    ScreenshotOptions(url = "https://example.com", format = "png", width = 1440)
-)
-
-// Full-page dark mode
-val img = api.screenshot(ScreenshotOptions(
-    url                = "https://example.com",
-    fullPage           = true,
-    darkMode           = true,
-    blockAds           = true,
-    blockCookieBanners = true,
-))
-
-// From HTML
-val htmlImg = api.screenshot(
-    ScreenshotOptions(html = "<h1>Hello!</h1>", format = "png")
-)
-
-// Device emulation
-val mobile = api.screenshot(
-    ScreenshotOptions(url = "https://example.com", device = "iphone-15-pro")
+val bytes = client.screenshot(
+    ScreenshotOptions(
+        url      = "https://example.com",
+        format   = ScreenshotFormat.PNG,   // PNG | JPEG | WEBP | AVIF | PDF
+        fullPage = true,
+        width    = 1440,
+        darkMode = true,
+        blockAds = true,
+    )
 )
 ```
 
-### PDF — `POST /v1/screenshot` (format=pdf)
+Capture from raw HTML or Markdown:
 
 ```kotlin
-val pdf = api.pdf(ScreenshotOptions(
-    url = "https://example.com",
-    pdf = PdfPageOptions(pageSize = "A4", landscape = false),
-))
-File("page.pdf").writeBytes(pdf)
+val png = client.screenshot(ScreenshotOptions(html = "<h1>Hello</h1>"))
 ```
 
-### Screenshot to Storage
+### PDF — `POST /v1/pdf`
 
 ```kotlin
-val result = api.screenshotToStorage(ScreenshotOptions(
-    url     = "https://example.com",
-    storage = StorageDestination(destination = "s3"),
-))
-println(result.url)
+val pdfBytes = client.pdf(
+    PdfOptions(
+        url        = "https://example.com",
+        pageFormat = PDFPageFormat.A4,  // A4 | LETTER | A3 | LEGAL | TABLOID
+        landscape  = false,
+    )
+)
+File("page.pdf").writeBytes(pdfBytes)
 ```
 
 ### Scrape — `POST /v1/scrape`
 
 ```kotlin
-val result = api.scrape(ScrapeOptions(
-    url   = "https://example.com",
-    type  = "text",    // text|html|links
-    pages = 3,
-))
-result.results.forEach { page ->
-    println("Page ${page.page}: ${page.data.take(100)}")
+val result = client.scrape(
+    ScrapeOptions(
+        url      = "https://example.com",
+        selector = "article",
+        wait     = 1000,   // ms to wait for dynamic content
+    )
+)
+result.results.forEach { item ->
+    println("Page ${item.page}: ${item.data.take(100)}")
 }
 ```
 
 ### Extract — `POST /v1/extract`
 
 ```kotlin
-// Convenience helpers
-val article  = api.extractArticle("https://example.com/post")
-val markdown = api.extractMarkdown("https://example.com")
-val links    = api.extractLinks("https://example.com")
-val images   = api.extractImages("https://example.com")
-val metadata = api.extractMetadata("https://example.com")
+// Convenience wrappers
+val markdown = client.extractMarkdown("https://example.com")
+val article  = client.extractArticle("https://example.com")
+val text     = client.extractText("https://example.com")
+val links    = client.extractLinks("https://example.com")
+val images   = client.extractImages("https://example.com")
+val metadata = client.extractMetadata("https://example.com")
 
 // Full control
-val result = api.extract(ExtractOptions(
-    url           = "https://example.com",
-    type          = "structured",
-    includeImages = true,
-    maxLength     = 5000,
-))
-println("Response time: ${result.responseTime}ms")
+val result = client.extract(
+    ExtractOptions(
+        url       = "https://example.com",
+        format    = ExtractFormat.MARKDOWN,
+        maxLength = 4096,
+    )
+)
 ```
 
-### Analyze — `POST /v1/analyze`
+### Quota — `GET /v1/quota`
 
 ```kotlin
-val result = api.analyze(AnalyzeOptions(
-    url               = "https://example.com",
-    prompt            = "What is the main purpose of this page?",
-    provider          = "openai",     // openai|anthropic
-    llmApiKey         = "sk-...",     // your LLM API key
-    includeScreenshot = true,
-))
-println(result.analysis)
-```
-
-### Storage — `/v1/storage/*`
-
-```kotlin
-// List files
-val files = api.listStorageFiles()
-
-// Usage
-val usage = api.storageUsage()
-println("Used: ${usage.used} bytes")
-
-// Configure S3
-api.configureS3(S3Config(
-    bucket          = "my-bucket",
-    region          = "us-east-1",
-    accessKeyId     = "AKIA...",
-    secretAccessKey = "...",
-))
-
-// Delete a file
-api.deleteStorageFile("file-id")
-```
-
-### Scheduled — `/v1/scheduled/*`
-
-```kotlin
-// Create hourly job
-val job = api.createScheduled(ScheduledOptions(
-    url            = "https://example.com",
-    cronExpression = "0 * * * *",
-    format         = "png",
-    fullPage       = true,
-    webhookUrl     = "https://myapp.com/hook",
-))
-
-// List all
-val jobs = api.listScheduled()
-
-// Delete
-api.deleteScheduled(job.id)
-```
-
-### Webhooks — `/v1/webhooks/*`
-
-```kotlin
-// Create
-val hook = api.createWebhook(WebhookOptions(
-    url    = "https://myapp.com/snapapi",
-    events = listOf("screenshot.completed", "scheduled.run"),
-    secret = "my-secret",
-))
-
-// List / delete
-val hooks = api.listWebhooks()
-api.deleteWebhook(hook.id)
-```
-
-### API Keys — `/v1/keys/*`
-
-```kotlin
-// List
-val keys = api.listKeys()
-
-// Create (key shown only once)
-val key = api.createKey("production")
-println(key.key)
-
-// Revoke
-api.deleteKey(key.id)
+val q = client.quota()
+println("Used: ${q.used} / ${q.total} — ${q.remaining} remaining")
+println("Resets: ${q.resetAt}")
 ```
 
 ## Error Handling
 
+All methods throw `SnapAPIException` (a sealed class):
+
 ```kotlin
-import pics.snapapi.SnapAPIException
+import pics.snapapi.exceptions.SnapAPIException
 
 try {
-    val data = api.screenshot(ScreenshotOptions(url = "https://example.com"))
+    val bytes = client.screenshot(opts)
 } catch (e: SnapAPIException) {
-    println("Error [${e.errorCode}]: ${e.message} (HTTP ${e.statusCode})")
-    if (e.isRetryable) {
-        // retry with exponential back-off
+    when (e) {
+        is SnapAPIException.Unauthorized  -> println("Invalid API key")
+        is SnapAPIException.RateLimited   -> delay(e.retryAfterMs)
+        is SnapAPIException.QuotaExceeded -> println("Upgrade plan at snapapi.pics/dashboard")
+        is SnapAPIException.ServerError   -> println("HTTP ${e.statusCode} [${e.errorCode}]: ${e.message}")
+        is SnapAPIException.NetworkError  -> println("Network error: ${e.message}")
+        is SnapAPIException.InvalidParams -> println("Bad parameters: ${e.message}")
+        is SnapAPIException.DecodingError -> println("Decode failed: ${e.message}")
     }
-} catch (e: IllegalArgumentException) {
-    println("Bad options: ${e.message}")
 }
 ```
 
-### Error Codes
+`isRetryable` is available on all exception types:
 
-| Code | Meaning |
-|------|---------|
-| `INVALID_PARAMS` | Missing or invalid parameters |
-| `UNAUTHORIZED` | Invalid or missing API key |
-| `FORBIDDEN` | Feature not available on your plan |
-| `RATE_LIMITED` | Too many requests |
-| `TIMEOUT` | Page load timed out |
-| `QUOTA_EXCEEDED` | Monthly quota reached |
-| `CONNECTION_ERROR` | Network error |
-| `SERVER_ERROR` | Upstream server error |
+```kotlin
+if (e.isRetryable) {
+    delay(e.retryDelayMs ?: 5_000L)
+    // retry...
+}
+```
+
+## Retry Policy
+
+The client retries transient errors automatically with exponential backoff.
+The `Retry-After` header is always honoured on 429 responses.
+
+```kotlin
+import pics.snapapi.http.RetryPolicy
+
+val client = SnapAPIClient(
+    apiKey      = "sk_...",
+    retryPolicy = RetryPolicy(
+        maxAttempts = 5,
+        baseDelayMs = 2_000L,  // 2 s for first retry
+        maxDelayMs  = 60_000L  // cap at 60 s
+    )
+)
+
+// Disable retries
+val strict = SnapAPIClient(apiKey = "sk_...", retryPolicy = RetryPolicy.NEVER)
+```
 
 ## Custom OkHttpClient
 
 ```kotlin
-val httpClient = OkHttpClient.Builder()
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
+
+val ok = OkHttpClient.Builder()
     .readTimeout(120, TimeUnit.SECONDS)
-    .addInterceptor(loggingInterceptor)
     .build()
 
-val api = SnapAPI(apiKey = "...", client = httpClient)
+val client = SnapAPIClient(apiKey = "sk_...", okHttpClient = ok)
+```
+
+## Testing
+
+Use MockWebServer to test without real network calls:
+
+```kotlin
+val server = MockWebServer()
+server.enqueue(MockResponse().setBody("""{"used":10,"total":100,"remaining":90}"""))
+
+val client = SnapAPIClient(
+    apiKey      = "test",
+    baseUrl     = server.url("/").toString().trimEnd('/'),
+    retryPolicy = RetryPolicy.NEVER,
+)
+val q = client.quota()
+assertEquals(10, q.used)
+```
+
+Run all tests:
+
+```bash
+./gradlew test
 ```
 
 ## Building
 
 ```bash
 ./gradlew build
-./gradlew test
 ```
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).

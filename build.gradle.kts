@@ -6,11 +6,13 @@ plugins {
 }
 
 group   = "pics.snapapi"
-version = "2.0.0"
+version = "3.0.0"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
+    withJavadocJar()
+    withSourcesJar()
 }
 
 kotlin {
@@ -31,10 +33,11 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
 
-    // Test
+    // Testing
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
 }
 
 tasks.test {
@@ -47,13 +50,25 @@ publishing {
             from(components["java"])
             pom {
                 name.set("SnapAPI Kotlin SDK")
-                description.set("Official Kotlin SDK for SnapAPI")
+                description.set("Official Kotlin SDK for SnapAPI.pics — screenshot, scrape, extract, PDF")
                 url.set("https://github.com/Sleywill/snapapi-kotlin")
                 licenses {
                     license {
                         name.set("MIT License")
                         url.set("https://opensource.org/licenses/MIT")
                     }
+                }
+                developers {
+                    developer {
+                        id.set("sleywill")
+                        name.set("SnapAPI Team")
+                        email.set("hello@snapapi.pics")
+                    }
+                }
+                scm {
+                    connection.set("scm:git:git://github.com/Sleywill/snapapi-kotlin.git")
+                    developerConnection.set("scm:git:ssh://github.com/Sleywill/snapapi-kotlin.git")
+                    url.set("https://github.com/Sleywill/snapapi-kotlin")
                 }
             }
         }

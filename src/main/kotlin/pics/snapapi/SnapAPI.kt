@@ -1,84 +1,142 @@
 package pics.snapapi
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
-import java.util.concurrent.TimeUnit
+import pics.snapapi.exceptions.SnapAPIException
+import pics.snapapi.http.HttpClient
+import pics.snapapi.http.RetryPolicy
+import pics.snapapi.models.*
 
 /**
- * SnapAPI — Official Kotlin SDK (v2.0.0)
+ * Thread-safe SnapAPI client.
  *
- * All suspend functions run on [Dispatchers.IO].
+ * All methods are `suspend` functions and run on [kotlinx.coroutines.Dispatchers.IO].
+ * A single instance can be shared across coroutines without additional synchronisation.
  *
  * ```kotlin
- * val api = SnapAPI("your-api-key")
+ * val client = SnapAPIClient(apiKey = "sk_your_key")
  *
- * val imageBytes = api.screenshot(ScreenshotOptions(url = "https://example.com"))
- * File("screenshot.png").writeBytes(imageBytes)
+ * // Screenshot
+ * val png = client.screenshot(ScreenshotOptions(url = "https://example.com"))
+ *
+ * // Scrape
+ * val page = client.scrape(ScrapeOptions(url = "https://example.com"))
+ * println(page.results.firstOrNull()?.data)
+ *
+ * // Extract
+ * val md = client.extractMarkdown("https://example.com")
+ *
+ * // Quota
+ * val q = client.quota()
+ * println("Used: ${q.used}/${q.total}")
+ * ```
+ *
+ * All methods throw [SnapAPIException]. Handle with a `when` expression:
+ *
+ * ```kotlin
+ * try {
+ *     val bytes = client.screenshot(opts)
+ * } catch (e: SnapAPIException) {
+ *     when (e) {
+ *         is SnapAPIException.RateLimited   -> delay(e.retryAfterMs)
+ *         is SnapAPIException.QuotaExceeded -> println("Upgrade plan")
+ *         is SnapAPIException.Unauthorized  -> println("Bad API key")
+ *         else                              -> throw e
+ *     }
+ * }
  * ```
  */
-class SnapAPI(
-    private val apiKey: String,
-    private val baseUrl: String = "https://api.snapapi.pics",
-    private val client: OkHttpClient = defaultClient(),
+class SnapAPIClient(
+    apiKey: String,
+    baseUrl: String = "https://snapapi.pics",
+    okHttpClient: OkHttpClient = HttpClient.defaultOkHttp(),
+    retryPolicy: RetryPolicy = RetryPolicy.DEFAULT,
 ) {
-    private val json = Json {
-        encodeDefaults = false
-        ignoreUnknownKeys = true
-        isLenient = true
-        explicitNulls = false
-    }
+    private val http = HttpClient(
+        apiKey      = apiKey,
+        baseUrl     = baseUrl,
+        okHttp      = okHttpClient,
+        retryPolicy = retryPolicy,
+    )
 
     // ── Screenshot  POST /v1/screenshot ───────────────────────────────────────
 
     /**
-     * Capture a screenshot of a URL or HTML/Markdown source.
+     * Capture a screenshot of a URL, HTML snippet, or Markdown string.
      *
-     * Returns raw PNG/JPEG/WEBP/AVIF/PDF bytes.
-     * When [ScreenshotOptions.storage] is set use [screenshotToStorage] instead.
+     * Returns raw binary image data (PNG, JPEG, WEBP, AVIF) or PDF bytes.
      *
-     * @throws SnapAPIException on API or network errors.
+     * @param options At least one of [ScreenshotOptions.url], [ScreenshotOptions.html],
+     *   or [ScreenshotOptions.markdown] must be set.
+     * @return Raw image bytes.
+     * @throws SnapAPIException on any API or network error.
      */
     suspend fun screenshot(options: ScreenshotOptions): ByteArray {
         require(options.url != null || options.html != null || options.markdown != null) {
             "One of url, html, or markdown is required."
         }
-        return post("/v1/screenshot", options)
+        return http.post("/v1/screenshot", options)
     }
 
     /**
-     * Capture a screenshot and upload to configured storage.
+     * Capture a screenshot and upload it to the configured storage backend.
      *
-     * @return [StorageUploadResult] with `id` and `url`.
+     * @return [StorageUploadResult] with the file `id` and public `url`.
+     * @throws SnapAPIException on any API or network error.
      */
     suspend fun screenshotToStorage(options: ScreenshotOptions): StorageUploadResult {
-        val bytes = screenshot(options)
-        return json.decodeFromString(bytes.decodeToString())
+        require(options.url != null || options.html != null || options.markdown != null) {
+            "One of url, html, or markdown is required."
+        }
+        return http.postJson("/v1/screenshot", options)
+    }
+
+    // ── PDF  POST /v1/pdf ─────────────────────────────────────────────────────
+
+    /**
+     * Generate a PDF of a URL.
+     *
+     * ```kotlin
+     * val bytes = client.pdf(PdfOptions(url = "https://example.com", pageFormat = PDFPageFormat.A4))
+     * File("page.pdf").writeBytes(bytes)
+     * ```
+     *
+     * @param options PDF rendering options. [PdfOptions.url] is required.
+     * @return Raw PDF bytes.
+     * @throws SnapAPIException on any API or network error.
+     */
+    suspend fun pdf(options: PdfOptions): ByteArray {
+        require(options.url.isNotBlank()) { "url is required." }
+        return http.post("/v1/pdf", options)
     }
 
     /**
-     * Generate a PDF (forces `format = "pdf"`).
+     * Convenience: generate a PDF via the screenshot endpoint (forces
+     * `format = PDF`).
      */
-    suspend fun pdf(options: ScreenshotOptions): ByteArray =
-        screenshot(options.copy(format = "pdf"))
+    suspend fun pdfFromScreenshot(options: ScreenshotOptions): ByteArray {
+        require(options.url != null || options.html != null || options.markdown != null) {
+            "One of url, html, or markdown is required."
+        }
+        return http.post("/v1/screenshot", options.copy(format = ScreenshotFormat.PDF))
+    }
 
     // ── Scrape  POST /v1/scrape ───────────────────────────────────────────────
 
     /**
-     * Scrape text, HTML, or links from a URL (up to 10 pages).
+     * Scrape text, HTML, or links from a URL.
      *
-     * @throws SnapAPIException on API or network errors.
+     * ```kotlin
+     * val result = client.scrape(ScrapeOptions(url = "https://example.com", selector = "article"))
+     * println(result.results.firstOrNull()?.data)
+     * ```
+     *
+     * @param options Scrape options. [ScrapeOptions.url] is required.
+     * @return [ScrapeResult] with one [ScrapeItem] per page.
+     * @throws SnapAPIException on any API or network error.
      */
     suspend fun scrape(options: ScrapeOptions): ScrapeResult {
         require(options.url.isNotBlank()) { "url is required." }
-        return postJson("/v1/scrape", options)
+        return http.postJson("/v1/scrape", options)
     }
 
     // ── Extract  POST /v1/extract ─────────────────────────────────────────────
@@ -86,270 +144,88 @@ class SnapAPI(
     /**
      * Extract structured content from a webpage.
      *
-     * @throws SnapAPIException on API or network errors.
+     * @param options Extract options. [ExtractOptions.url] is required.
+     * @return [ExtractResult] with the requested content.
+     * @throws SnapAPIException on any API or network error.
      */
     suspend fun extract(options: ExtractOptions): ExtractResult {
         require(options.url.isNotBlank()) { "url is required." }
-        return postJson("/v1/extract", options)
+        return http.postJson("/v1/extract", options)
     }
 
-    /** Extract Markdown content. */
+    /** Extract page content as Markdown. */
     suspend fun extractMarkdown(url: String): ExtractResult =
-        extract(ExtractOptions(url = url, type = "markdown"))
+        extract(ExtractOptions(url = url, format = ExtractFormat.MARKDOWN))
 
-    /** Extract article content. */
+    /** Extract article body. */
     suspend fun extractArticle(url: String): ExtractResult =
-        extract(ExtractOptions(url = url, type = "article"))
+        extract(ExtractOptions(url = url, format = ExtractFormat.ARTICLE))
 
     /** Extract plain text. */
     suspend fun extractText(url: String): ExtractResult =
-        extract(ExtractOptions(url = url, type = "text"))
+        extract(ExtractOptions(url = url, format = ExtractFormat.TEXT))
 
-    /** Extract all links. */
+    /** Extract all hyperlinks. */
     suspend fun extractLinks(url: String): ExtractResult =
-        extract(ExtractOptions(url = url, type = "links"))
+        extract(ExtractOptions(url = url, format = ExtractFormat.LINKS))
 
-    /** Extract all images. */
+    /** Extract all image URLs. */
     suspend fun extractImages(url: String): ExtractResult =
-        extract(ExtractOptions(url = url, type = "images"))
+        extract(ExtractOptions(url = url, format = ExtractFormat.IMAGES))
 
-    /** Extract page metadata. */
+    /** Extract page metadata (Open Graph, meta tags). */
     suspend fun extractMetadata(url: String): ExtractResult =
-        extract(ExtractOptions(url = url, type = "metadata"))
-
-    /** Extract structured data. */
-    suspend fun extractStructured(url: String): ExtractResult =
-        extract(ExtractOptions(url = url, type = "structured"))
-
-    // ── Analyze  POST /v1/analyze ─────────────────────────────────────────────
-
-    /**
-     * Perform AI-powered analysis of a webpage.
-     *
-     * @throws SnapAPIException on API or network errors.
-     */
-    suspend fun analyze(options: AnalyzeOptions): AnalyzeResult {
-        require(options.url.isNotBlank()) { "url is required." }
-        return postJson("/v1/analyze", options)
-    }
-
+        extract(ExtractOptions(url = url, format = ExtractFormat.METADATA))
 
     // ── Video  POST /v1/video ─────────────────────────────────────────────────
 
     /**
-     * Record a video (WebM/MP4/GIF) of a live webpage.
+     * Record a video of a live webpage. Returns raw binary bytes.
      *
-     * Returns raw binary bytes. For structured metadata use [videoResult].
+     * For structured metadata (base64-encoded video + dimensions) use
+     * [videoResult] instead.
      *
-     * @throws SnapAPIException on API or network errors.
+     * @param options Video options. [VideoOptions.url] is required.
+     * @throws SnapAPIException on any API or network error.
      */
     suspend fun video(options: VideoOptions): ByteArray {
         require(options.url.isNotBlank()) { "url is required." }
-        return post("/v1/video", options.copy(responseType = "binary"))
+        return http.post("/v1/video", options.copy(responseType = "binary"))
     }
 
     /**
-     * Record a video and return structured [VideoResult] metadata.
+     * Record a video and return structured [VideoResult] metadata including
+     * a base64-encoded video payload.
      *
-     * @throws SnapAPIException on API or network errors.
+     * @throws SnapAPIException on any API or network error.
      */
     suspend fun videoResult(options: VideoOptions): VideoResult {
         require(options.url.isNotBlank()) { "url is required." }
-        return postJson("/v1/video", options.copy(responseType = "json"))
+        return http.postJson("/v1/video", options.copy(responseType = "json"))
     }
+
+    // ── Quota  GET /v1/quota ──────────────────────────────────────────────────
+
+    /**
+     * Fetch the account's API usage quota for the current billing period.
+     *
+     * ```kotlin
+     * val q = client.quota()
+     * println("Used: ${q.used}/${q.total} — ${q.remaining} remaining")
+     * ```
+     *
+     * @return [QuotaResult] with `used`, `total`, and `remaining` counts.
+     * @throws SnapAPIException on any API or network error.
+     */
+    suspend fun quota(): QuotaResult = http.getJson("/v1/quota")
 
     // ── Ping  GET /v1/ping ────────────────────────────────────────────────────
 
     /**
-     * Check API availability.
+     * Check API health.
      *
      * @return [PingResult] with status and timestamp.
-     * @throws SnapAPIException on API or network errors.
+     * @throws SnapAPIException on any API or network error.
      */
-    suspend fun ping(): PingResult = getJson("/v1/ping")
-
-    // ── Account Usage  GET /v1/usage ──────────────────────────────────────────
-
-    /**
-     * Get account-level API usage for the current billing period.
-     *
-     * @return [AccountUsageResult] with used, limit, and remaining counts.
-     * @throws SnapAPIException on API or network errors.
-     */
-    suspend fun usage(): AccountUsageResult = getJson("/v1/usage")
-
-    // ── Storage  /v1/storage/* ────────────────────────────────────────────────
-
-
-    /** List all stored files. */
-    suspend fun listStorageFiles(): StorageFilesResult =
-        getJson("/v1/storage/files")
-
-    /** Delete a stored file by ID. */
-    suspend fun deleteStorageFile(id: String) =
-        delete("/v1/storage/files/$id")
-
-    /** Get storage usage statistics. */
-    suspend fun storageUsage(): StorageUsageResult =
-        getJson("/v1/storage/usage")
-
-    /** Configure an S3-compatible storage backend. */
-    suspend fun configureS3(config: S3Config) {
-        post("/v1/storage/s3", config)
-    }
-
-    /** Test the configured S3 connection. */
-    suspend fun testS3() {
-        postRaw("/v1/storage/s3/test", "{}")
-    }
-
-    // ── Scheduled  /v1/scheduled/* ────────────────────────────────────────────
-
-    /** Create a scheduled screenshot job. */
-    suspend fun createScheduled(options: ScheduledOptions): ScheduledJob =
-        postJson("/v1/scheduled", options)
-
-    /** List all scheduled jobs. */
-    suspend fun listScheduled(): ScheduledListResult =
-        getJson("/v1/scheduled")
-
-    /** Delete a scheduled job. */
-    suspend fun deleteScheduled(id: String) =
-        delete("/v1/scheduled/$id")
-
-    // ── Webhooks  /v1/webhooks/* ──────────────────────────────────────────────
-
-    /** Register a new webhook. */
-    suspend fun createWebhook(options: WebhookOptions): Webhook =
-        postJson("/v1/webhooks", options)
-
-    /** List all registered webhooks. */
-    suspend fun listWebhooks(): WebhooksListResult =
-        getJson("/v1/webhooks")
-
-    /** Delete a webhook. */
-    suspend fun deleteWebhook(id: String) =
-        delete("/v1/webhooks/$id")
-
-    // ── API Keys  /v1/keys/* ──────────────────────────────────────────────────
-
-    /** List all API keys. */
-    suspend fun listKeys(): KeysListResult =
-        getJson("/v1/keys")
-
-    /** Create a new API key. The returned [ApiKey.key] is only shown once. */
-    suspend fun createKey(name: String): ApiKey =
-        postJson("/v1/keys", mapOf("name" to name))
-
-    /** Revoke an API key. */
-    suspend fun deleteKey(id: String) =
-        delete("/v1/keys/$id")
-
-    // ── HTTP helpers ──────────────────────────────────────────────────────────
-
-    private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
-
-    private fun headers() = mapOf(
-        "x-api-key"    to apiKey,
-        "Content-Type" to "application/json",
-        "User-Agent"   to "snapapi-kotlin/2.0.0",
-        "Accept"       to "*/*",
-    )
-
-    private suspend inline fun <reified T> post(path: String, body: T): ByteArray =
-        withContext(Dispatchers.IO) {
-            val jsonBody = json.encodeToString(body).toRequestBody(jsonMediaType)
-            val request  = Request.Builder()
-                .url("$baseUrl$path")
-                .post(jsonBody)
-                .apply { headers().forEach { (k, v) -> header(k, v) } }
-                .build()
-            execute(request)
-        }
-
-    private suspend fun postRaw(path: String, bodyStr: String): ByteArray =
-        withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url("$baseUrl$path")
-                .post(bodyStr.toRequestBody(jsonMediaType))
-                .apply { headers().forEach { (k, v) -> header(k, v) } }
-                .build()
-            execute(request)
-        }
-
-    private suspend inline fun <reified B, reified R> postJson(path: String, body: B): R {
-        val bytes = post(path, body)
-        return json.decodeFromString(bytes.decodeToString())
-    }
-
-    private suspend inline fun <reified R> getJson(path: String): R =
-        withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url("$baseUrl$path")
-                .get()
-                .apply { headers().forEach { (k, v) -> header(k, v) } }
-                .build()
-            json.decodeFromString(execute(request).decodeToString())
-        }
-
-    private suspend fun delete(path: String) =
-        withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url("$baseUrl$path")
-                .delete()
-                .apply { headers().forEach { (k, v) -> header(k, v) } }
-                .build()
-            execute(request)
-        }
-
-    private fun execute(request: Request): ByteArray {
-        val response: Response
-        try {
-            response = client.newCall(request).execute()
-        } catch (e: Exception) {
-            throw SnapAPIException("Network error: ${e.message}", "CONNECTION_ERROR", 0, e)
-        }
-
-        val bodyBytes = response.body?.bytes() ?: ByteArray(0)
-
-        if (!response.isSuccessful) {
-            val bodyStr = bodyBytes.decodeToString()
-            val parsed  = runCatching { json.decodeFromString<ApiErrorResponse>(bodyStr) }.getOrNull()
-            val message = parsed?.message ?: "HTTP ${response.code}"
-            val code    = parsed?.error   ?: "HTTP_ERROR"
-            throw SnapAPIException(message, code, response.code)
-        }
-
-        return bodyBytes
-    }
-
-    companion object {
-        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(90, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build()
-    }
-}
-
-// ── Exception ─────────────────────────────────────────────────────────────────
-
-/**
- * Exception thrown for SnapAPI errors.
- *
- * @property errorCode   Short machine-readable error code (e.g. "RATE_LIMITED").
- * @property statusCode  HTTP status code (0 for network errors).
- */
-class SnapAPIException(
-    message: String,
-    val errorCode: String,
-    val statusCode: Int,
-    cause: Throwable? = null,
-) : Exception(message, cause) {
-
-    /** Returns `true` if retrying the request might succeed. */
-    val isRetryable: Boolean
-        get() = errorCode == "RATE_LIMITED" || errorCode == "TIMEOUT" || statusCode >= 500
-
-    override fun toString(): String = "[$errorCode] $message (HTTP $statusCode)"
+    suspend fun ping(): PingResult = http.getJson("/v1/ping")
 }
