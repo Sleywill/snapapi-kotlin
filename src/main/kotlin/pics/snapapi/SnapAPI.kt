@@ -48,7 +48,7 @@ import java.io.File
  */
 class SnapAPIClient(
     apiKey: String,
-    baseUrl: String = "https://api.snapapi.pics",
+    baseUrl: String = "https://snapapi.pics",
     okHttpClient: OkHttpClient = HttpClient.defaultOkHttp(),
     retryPolicy: RetryPolicy = RetryPolicy.DEFAULT,
 ) {
@@ -246,28 +246,28 @@ class SnapAPIClient(
         return http.postJson("/v1/video", options.copy(responseType = "json"))
     }
 
-    // ── Quota  GET /v1/quota ──────────────────────────────────────────────────
+    // ── Usage  GET /v1/usage ──────────────────────────────────────────────────
 
     /**
-     * Fetch the account's API usage quota for the current billing period.
+     * Fetch the account's API usage for the current billing period.
      *
      * ```kotlin
-     * val q = client.quota()
-     * println("Used: ${q.used}/${q.total} — ${q.remaining} remaining")
+     * val u = client.getUsage()
+     * println("Used: ${u.used}/${u.total} — ${u.remaining} remaining")
      * ```
      *
      * @return [QuotaResult] with `used`, `total`, and `remaining` counts.
      * @throws SnapAPIException on any API or network error.
      */
-    suspend fun quota(): QuotaResult = http.getJson("/v1/quota")
+    suspend fun getUsage(): QuotaResult = http.getJson("/v1/usage")
 
     /**
-     * Alias for [quota] matching the `GET /v1/usage` endpoint name.
+     * Alias for [getUsage], kept for backward compatibility.
      *
      * @return [QuotaResult] with `used`, `total`, and `remaining` counts.
      * @throws SnapAPIException on any API or network error.
      */
-    suspend fun getUsage(): QuotaResult = quota()
+    suspend fun quota(): QuotaResult = getUsage()
 
     // ── Ping  GET /v1/ping ────────────────────────────────────────────────────
 

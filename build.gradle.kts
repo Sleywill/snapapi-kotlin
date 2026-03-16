@@ -6,7 +6,7 @@ plugins {
 }
 
 group   = "pics.snapapi"
-version = "3.0.0"
+version = "3.1.0"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_11
