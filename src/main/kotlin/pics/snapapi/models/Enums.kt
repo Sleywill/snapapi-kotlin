@@ -45,6 +45,14 @@ enum class VideoFormat(val value: String) {
     @SerialName("gif")  GIF("gif"),
 }
 
+/** LLM provider for the analyze endpoint. */
+@Serializable
+enum class AnalyzeProvider(val value: String) {
+    @SerialName("openai")    OPENAI("openai"),
+    @SerialName("anthropic") ANTHROPIC("anthropic"),
+    @SerialName("google")    GOOGLE("google"),
+}
+
 /** Easing curve for automated scroll animations in video recording. */
 @Serializable
 enum class ScrollEasing(val value: String) {

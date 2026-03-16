@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import pics.snapapi.http.RetryPolicy
 import pics.snapapi.models.*
+import pics.snapapi.exceptions.SnapAPIException
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
@@ -69,7 +70,7 @@ class ScrapeTest {
         val req = server.takeRequest()
         assertEquals("POST", req.method)
         assertEquals("/v1/scrape", req.path)
-        assertEquals("Bearer sk_test", req.getHeader("Authorization"))
+        assertEquals("sk_test", req.getHeader("X-Api-Key"))
         assertTrue(req.getHeader("Content-Type")?.contains("application/json") == true)
     }
 
@@ -104,6 +105,58 @@ class ScrapeTest {
         )
         val result = client.extractArticle("https://example.com")
         assertEquals("article", result.type)
+    }
+
+    @Test
+    fun `analyze requires url`() = runTest {
+        assertFailsWith<IllegalArgumentException> {
+            client.analyze(AnalyzeOptions(url = ""))
+        }
+    }
+
+    @Test
+    fun `analyze returns result`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":"This is a summary","url":"https://example.com"}"""
+            )
+        )
+        val result = client.analyze(AnalyzeOptions(
+            url = "https://example.com",
+            prompt = "Summarize",
+            provider = AnalyzeProvider.OPENAI,
+        ))
+        assertEquals("This is a summary", result.result)
+        assertEquals("https://example.com", result.url)
+
+        val req = server.takeRequest()
+        assertEquals("/v1/analyze", req.path)
+        assertTrue(req.body.readUtf8().contains("openai"))
+    }
+
+    @Test
+    fun `analyze 503 throws ServerError`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(503)
+                .setBody("""{"error":"SERVICE_UNAVAILABLE","message":"LLM credits exhausted"}""")
+        )
+        val ex = assertFailsWith<SnapAPIException.ServerError> {
+            client.analyze(AnalyzeOptions(url = "https://example.com"))
+        }
+        assertEquals(503, ex.statusCode)
+    }
+
+    @Test
+    fun `getUsage is alias for quota`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"used":25,"total":200,"remaining":175}"""
+            )
+        )
+        val usage = client.getUsage()
+        assertEquals(25, usage.used)
+        assertEquals(175, usage.remaining)
     }
 
     @Test

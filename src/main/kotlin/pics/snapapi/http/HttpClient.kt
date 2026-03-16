@@ -14,7 +14,7 @@ import pics.snapapi.models.ApiErrorBody
 import java.util.concurrent.TimeUnit
 
 private const val USER_AGENT = "snapapi-kotlin/3.0.0"
-private const val BASE_URL   = "https://snapapi.pics"
+private const val BASE_URL   = "https://api.snapapi.pics"
 
 /**
  * Low-level HTTP client that handles authentication, serialisation, error
@@ -85,7 +85,7 @@ internal class HttpClient(
             val request = Request.Builder()
                 .url("$baseUrl$path")
                 .method(method, if (method == "GET" || method == "DELETE") null else reqBody)
-                .header("Authorization", "Bearer $apiKey")
+                .header("X-Api-Key", apiKey)
                 .header("Content-Type",  "application/json")
                 .header("Accept",        "*/*")
                 .header("User-Agent",    USER_AGENT)

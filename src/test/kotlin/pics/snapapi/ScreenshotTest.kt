@@ -54,7 +54,7 @@ class ScreenshotTest {
         val request = server.takeRequest()
         assertEquals("POST", request.method)
         assertEquals("/v1/screenshot", request.path)
-        assertEquals("Bearer sk_test", request.getHeader("Authorization"))
+        assertEquals("sk_test", request.getHeader("X-Api-Key"))
     }
 
     @Test

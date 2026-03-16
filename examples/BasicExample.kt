@@ -83,5 +83,26 @@ private suspend fun runExamples(client: SnapAPIClient) {
     val md = client.extractMarkdown("https://example.com")
     println("  type=${md.type}")
 
+    // ── Analyze ──────────────────────────────────────────────────────────
+    println("\nAnalyzing page (may return 503 if LLM credits are down)...")
+    try {
+        val analysis = client.analyze(
+            AnalyzeOptions(
+                url      = "https://example.com",
+                prompt   = "Summarize this page in one sentence",
+                provider = AnalyzeProvider.OPENAI,
+            )
+        )
+        println("  Analysis: ${analysis.result.take(200)}...")
+    } catch (e: SnapAPIException.ServerError) {
+        if (e.statusCode == 503) {
+            println("  Analyze endpoint unavailable (503 -- LLM credits may be exhausted)")
+        } else throw e
+    }
+
+    // ── Usage ──────────────────────────────────────────────────────────────
+    val usage = client.getUsage()
+    println("\nUsage: ${usage.used}/${usage.total} used, ${usage.remaining} remaining")
+
     println("\nDone.")
 }

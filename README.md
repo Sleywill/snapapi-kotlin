@@ -4,9 +4,9 @@
 [![CI](https://github.com/Sleywill/snapapi-kotlin/actions/workflows/ci.yml/badge.svg)](https://github.com/Sleywill/snapapi-kotlin/actions)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 
-Official Kotlin SDK for [SnapAPI.pics](https://snapapi.pics) — screenshot, scrape, extract, and PDF generation as a service.
+Official Kotlin SDK for [SnapAPI.pics](https://snapapi.pics) -- screenshot, scrape, extract, analyze, and PDF generation as a service.
 
-**v3.0.0** — Sealed exception hierarchy, typed enums, retry with exponential backoff.
+**v3.0.0** -- Sealed exception hierarchy, typed enums, retry with exponential backoff.
 
 ## Requirements
 
@@ -49,6 +49,12 @@ val client = SnapAPIClient(apiKey = "sk_your_key")
 val png = client.screenshot(ScreenshotOptions(url = "https://example.com"))
 File("shot.png").writeBytes(png)
 
+// Screenshot to file
+client.screenshotToFile(
+    ScreenshotOptions(url = "https://example.com"),
+    file = File("output.png")
+)
+
 // Scrape
 val page = client.scrape(ScrapeOptions(url = "https://example.com"))
 println(page.results.firstOrNull()?.data)
@@ -59,14 +65,20 @@ val md = client.extractMarkdown("https://example.com")
 // PDF
 val pdf = client.pdf(PdfOptions(url = "https://example.com"))
 
-// Quota
-val q = client.quota()
+// Analyze (LLM-powered)
+val analysis = client.analyze(AnalyzeOptions(
+    url = "https://example.com",
+    prompt = "Summarize this page"
+))
+
+// Usage / Quota
+val q = client.getUsage()
 println("Used: ${q.used}/${q.total}")
 ```
 
 ## Endpoints
 
-### Screenshot — `POST /v1/screenshot`
+### Screenshot -- `POST /v1/screenshot`
 
 ```kotlin
 val bytes = client.screenshot(
@@ -87,7 +99,17 @@ Capture from raw HTML or Markdown:
 val png = client.screenshot(ScreenshotOptions(html = "<h1>Hello</h1>"))
 ```
 
-### PDF — `POST /v1/pdf`
+Save directly to a file:
+
+```kotlin
+val bytesWritten = client.screenshotToFile(
+    ScreenshotOptions(url = "https://example.com"),
+    file = File("output.png")
+)
+println("Wrote $bytesWritten bytes")
+```
+
+### PDF -- `POST /v1/pdf`
 
 ```kotlin
 val pdfBytes = client.pdf(
@@ -100,7 +122,7 @@ val pdfBytes = client.pdf(
 File("page.pdf").writeBytes(pdfBytes)
 ```
 
-### Scrape — `POST /v1/scrape`
+### Scrape -- `POST /v1/scrape`
 
 ```kotlin
 val result = client.scrape(
@@ -115,7 +137,7 @@ result.results.forEach { item ->
 }
 ```
 
-### Extract — `POST /v1/extract`
+### Extract -- `POST /v1/extract`
 
 ```kotlin
 // Convenience wrappers
@@ -136,12 +158,28 @@ val result = client.extract(
 )
 ```
 
-### Quota — `GET /v1/quota`
+### Analyze -- `POST /v1/analyze`
+
+Uses an LLM provider to analyze webpage content. This endpoint may return
+HTTP 503 when LLM credits are exhausted on the server.
 
 ```kotlin
-val q = client.quota()
-println("Used: ${q.used} / ${q.total} — ${q.remaining} remaining")
-println("Resets: ${q.resetAt}")
+val result = client.analyze(
+    AnalyzeOptions(
+        url      = "https://example.com",
+        prompt   = "Summarize the main points of this page",
+        provider = AnalyzeProvider.OPENAI,
+    )
+)
+println(result.result)
+```
+
+### Usage -- `GET /v1/usage`
+
+```kotlin
+val usage = client.getUsage()
+println("Used: ${usage.used} / ${usage.total} -- ${usage.remaining} remaining")
+println("Resets: ${usage.resetAt}")
 ```
 
 ## Error Handling
@@ -209,6 +247,42 @@ val ok = OkHttpClient.Builder()
 val client = SnapAPIClient(apiKey = "sk_...", okHttpClient = ok)
 ```
 
+## Android Use Cases
+
+Capture website screenshots in your Android app:
+
+```kotlin
+// In a Jetpack ViewModel
+class MyViewModel : ViewModel() {
+    private val client = SnapAPIClient(apiKey = "sk_...")
+
+    fun capture(url: String) = viewModelScope.launch {
+        val bytes = client.screenshot(
+            ScreenshotOptions(url = url, width = 390, blockAds = true)
+        )
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        _screenshot.value = bitmap
+    }
+}
+```
+
+## Server-Side Use Cases
+
+Competitive intelligence pipeline:
+
+```kotlin
+// Capture competitor pages in parallel
+coroutineScope {
+    val jobs = competitors.map { url ->
+        async {
+            val bytes = client.screenshot(ScreenshotOptions(url = url, fullPage = true))
+            File("output/${url.host}.png").writeBytes(bytes)
+        }
+    }
+    jobs.awaitAll()
+}
+```
+
 ## Testing
 
 Use MockWebServer to test without real network calls:
@@ -237,6 +311,14 @@ Run all tests:
 ```bash
 ./gradlew build
 ```
+
+## Examples
+
+See the `examples/` directory for complete working examples:
+
+- **BasicExample.kt** -- Quickstart covering all endpoints
+- **AndroidExample.kt** -- Jetpack ViewModel integration for Android apps
+- **ServerExample.kt** -- Server-side competitive intelligence pipeline
 
 ## License
 

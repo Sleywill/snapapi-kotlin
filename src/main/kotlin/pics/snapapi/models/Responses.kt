@@ -103,6 +103,17 @@ data class VideoResult(
     val size: Int,
 )
 
+// ── Analyze ──────────────────────────────────────────────────────────────────
+
+/** Returned by [pics.snapapi.SnapAPIClient.analyze]. */
+@Serializable
+data class AnalyzeResult(
+    /** The LLM analysis result. */
+    val result: String,
+    /** The URL that was analyzed. */
+    val url: String,
+)
+
 // ── Internal error body ───────────────────────────────────────────────────────
 
 @Serializable

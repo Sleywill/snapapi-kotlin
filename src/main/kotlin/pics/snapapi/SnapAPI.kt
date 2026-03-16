@@ -5,6 +5,7 @@ import pics.snapapi.exceptions.SnapAPIException
 import pics.snapapi.http.HttpClient
 import pics.snapapi.http.RetryPolicy
 import pics.snapapi.models.*
+import java.io.File
 
 /**
  * Thread-safe SnapAPI client.
@@ -47,7 +48,7 @@ import pics.snapapi.models.*
  */
 class SnapAPIClient(
     apiKey: String,
-    baseUrl: String = "https://snapapi.pics",
+    baseUrl: String = "https://api.snapapi.pics",
     okHttpClient: OkHttpClient = HttpClient.defaultOkHttp(),
     retryPolicy: RetryPolicy = RetryPolicy.DEFAULT,
 ) {
@@ -88,6 +89,20 @@ class SnapAPIClient(
             "One of url, html, or markdown is required."
         }
         return http.postJson("/v1/screenshot", options)
+    }
+
+    /**
+     * Capture a screenshot and write it directly to a file.
+     *
+     * @param options Screenshot options.
+     * @param file    The [File] to write the image data to.
+     * @return The number of bytes written.
+     * @throws SnapAPIException on any API or network error.
+     */
+    suspend fun screenshotToFile(options: ScreenshotOptions, file: File): Int {
+        val bytes = screenshot(options)
+        file.writeBytes(bytes)
+        return bytes.size
     }
 
     // ── PDF  POST /v1/pdf ─────────────────────────────────────────────────────
@@ -177,6 +192,33 @@ class SnapAPIClient(
     suspend fun extractMetadata(url: String): ExtractResult =
         extract(ExtractOptions(url = url, format = ExtractFormat.METADATA))
 
+    // ── Analyze  POST /v1/analyze ─────────────────────────────────────────────
+
+    /**
+     * Analyze a webpage using an LLM provider.
+     *
+     * This endpoint extracts content from the URL and sends it to an LLM for
+     * analysis. It may return HTTP 503 when LLM credits are exhausted
+     * server-side.
+     *
+     * ```kotlin
+     * val result = client.analyze(AnalyzeOptions(
+     *     url = "https://example.com",
+     *     prompt = "Summarize this page",
+     *     provider = AnalyzeProvider.OPENAI
+     * ))
+     * println(result.result)
+     * ```
+     *
+     * @param options Analyze options. [AnalyzeOptions.url] is required.
+     * @return [AnalyzeResult] with the LLM analysis.
+     * @throws SnapAPIException on any API or network error.
+     */
+    suspend fun analyze(options: AnalyzeOptions): AnalyzeResult {
+        require(options.url.isNotBlank()) { "url is required." }
+        return http.postJson("/v1/analyze", options)
+    }
+
     // ── Video  POST /v1/video ─────────────────────────────────────────────────
 
     /**
@@ -218,6 +260,14 @@ class SnapAPIClient(
      * @throws SnapAPIException on any API or network error.
      */
     suspend fun quota(): QuotaResult = http.getJson("/v1/quota")
+
+    /**
+     * Alias for [quota] matching the `GET /v1/usage` endpoint name.
+     *
+     * @return [QuotaResult] with `used`, `total`, and `remaining` counts.
+     * @throws SnapAPIException on any API or network error.
+     */
+    suspend fun getUsage(): QuotaResult = quota()
 
     // ── Ping  GET /v1/ping ────────────────────────────────────────────────────
 

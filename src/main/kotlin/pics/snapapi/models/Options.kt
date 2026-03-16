@@ -223,6 +223,35 @@ data class ExtractOptions(
     val maxLength: Int? = null,
 )
 
+// ── Analyze ──────────────────────────────────────────────────────────────────
+
+/**
+ * Options for `POST /v1/analyze`.
+ *
+ * The analyze endpoint extracts content from a URL and sends it to an LLM
+ * for analysis. This endpoint may return HTTP 503 when LLM credits are
+ * exhausted on the server.
+ *
+ * ```kotlin
+ * val opts = AnalyzeOptions(
+ *     url = "https://example.com",
+ *     prompt = "Summarize the main points",
+ *     provider = AnalyzeProvider.OPENAI
+ * )
+ * ```
+ */
+@Serializable
+data class AnalyzeOptions(
+    /** The URL to analyze. Required. */
+    val url: String,
+    /** Prompt for the LLM. */
+    val prompt: String? = null,
+    /** LLM provider to use. */
+    val provider: AnalyzeProvider? = null,
+    /** API key for the LLM provider (your own key, not the SnapAPI key). */
+    val apiKey: String? = null,
+)
+
 // ── Video ─────────────────────────────────────────────────────────────────────
 
 /**
