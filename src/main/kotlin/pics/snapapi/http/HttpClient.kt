@@ -14,7 +14,7 @@ import pics.snapapi.models.ApiErrorBody
 import java.util.concurrent.TimeUnit
 
 private const val USER_AGENT = "snapapi-kotlin/3.1.0"
-private const val BASE_URL   = "https://snapapi.pics"
+private const val BASE_URL   = "https://api.snapapi.pics"
 
 /**
  * Low-level HTTP client that handles authentication, serialisation, error
