@@ -20,22 +20,76 @@ Official Kotlin SDK for [SnapAPI.pics](https://snapapi.pics) -- screenshot, scra
 
 ## Installation
 
+The SDK is distributed via [JitPack](https://jitpack.io/#Sleywill/snapapi-kotlin).
+
 ### Gradle (Kotlin DSL)
 
+Add the JitPack repository and the dependency to your `build.gradle.kts`:
+
 ```kotlin
+repositories {
+    mavenCentral()
+    maven { url = uri("https://jitpack.io") }
+}
+
 dependencies {
-    implementation("pics.snapapi:snapapi-kotlin:3.1.0")
+    implementation("com.github.Sleywill:snapapi-kotlin:3.1.0")
+}
+```
+
+### Gradle (Groovy DSL)
+
+```groovy
+repositories {
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    implementation 'com.github.Sleywill:snapapi-kotlin:3.1.0'
 }
 ```
 
 ### Maven
 
+Add the JitPack repository to your `pom.xml`:
+
 ```xml
-<dependency>
-    <groupId>pics.snapapi</groupId>
-    <artifactId>snapapi-kotlin</artifactId>
-    <version>3.1.0</version>
-</dependency>
+<repositories>
+    <repository>
+        <id>jitpack.io</id>
+        <url>https://jitpack.io</url>
+    </repository>
+</repositories>
+
+<dependencies>
+    <dependency>
+        <groupId>com.github.Sleywill</groupId>
+        <artifactId>snapapi-kotlin</artifactId>
+        <version>3.1.0</version>
+    </dependency>
+</dependencies>
+```
+
+### Build from source
+
+```bash
+git clone https://github.com/Sleywill/snapapi-kotlin.git
+cd snapapi-kotlin
+./gradlew publishToMavenLocal
+```
+
+Then reference the local artifact in your project:
+
+```kotlin
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+dependencies {
+    implementation("pics.snapapi:snapapi-kotlin:3.1.0")
+}
 ```
 
 ## Quickstart
