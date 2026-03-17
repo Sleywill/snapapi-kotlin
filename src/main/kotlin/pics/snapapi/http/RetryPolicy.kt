@@ -49,11 +49,12 @@ data class RetryPolicy(
      * (0-based: 0 = first retry).
      *
      * If [overrideMs] is provided (from a `Retry-After` header) it takes
-     * precedence over the exponential calculation but is still capped at
-     * [maxDelayMs].
+     * precedence over the exponential calculation. The override value is used
+     * as-is and is not capped by [maxDelayMs], so server-mandated delays are
+     * always honoured.
      */
     fun delayMs(attempt: Int, overrideMs: Long? = null): Long {
-        if (overrideMs != null) return min(overrideMs, maxDelayMs)
+        if (overrideMs != null) return overrideMs
         val exponential = (baseDelayMs * 2.0.pow(attempt.toDouble())).toLong()
         return min(exponential, maxDelayMs)
     }

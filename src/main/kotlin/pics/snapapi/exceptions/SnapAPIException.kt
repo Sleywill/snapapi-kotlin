@@ -88,7 +88,7 @@ sealed class SnapAPIException(message: String, cause: Throwable? = null) :
         message: String,
     ) : SnapAPIException(message) {
         /** Whether retrying might succeed (true for 5xx). */
-        val isRetryable: Boolean get() = statusCode >= 500
+        override val isRetryable: Boolean get() = statusCode >= 500
     }
 
     /**
@@ -129,7 +129,7 @@ sealed class SnapAPIException(message: String, cause: Throwable? = null) :
         message: String,
     ) : SnapAPIException(message) {
         /** Whether retrying might succeed (true for 5xx). */
-        val isRetryable: Boolean get() = statusCode >= 500
+        override val isRetryable: Boolean get() = statusCode >= 500
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ sealed class SnapAPIException(message: String, cause: Throwable? = null) :
     /**
      * Whether this exception is transient and the request can be safely retried.
      */
-    val isRetryable: Boolean
+    open val isRetryable: Boolean
         get() = when (this) {
             is RateLimitException -> true
             is NetworkException   -> true
