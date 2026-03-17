@@ -234,8 +234,8 @@ data class ExtractOptions(
  *
  * ```kotlin
  * val opts = AnalyzeOptions(
- *     url = "https://example.com",
- *     prompt = "Summarize the main points",
+ *     url      = "https://example.com",
+ *     prompt   = "Summarize the main points",
  *     provider = AnalyzeProvider.OPENAI
  * )
  * ```
@@ -295,6 +295,172 @@ data class VideoOptions(
     val blockCookieBanners: Boolean? = null,
     /** Delay before recording starts, in milliseconds. */
     val delay: Int? = null,
-    /** Internal: `"binary"` or `"json"`. Set automatically by the SDK. */
-    val responseType: String? = null,
+    /** Internal: `"binary"` or `"json"`. Managed by the SDK — do not set manually. */
+    internal val responseType: String? = null,
+)
+
+// ── OG Image ──────────────────────────────────────────────────────────────────
+
+/**
+ * Options for `POST /v1/og-image`.
+ *
+ * ```kotlin
+ * val opts = OgImageOptions(url = "https://example.com")
+ * val bytes = client.ogImage(opts)
+ * ```
+ */
+@Serializable
+data class OgImageOptions(
+    /** The URL to generate an OG image for. Required. */
+    val url: String,
+    /** Image width in pixels (default 1200). */
+    val width: Int? = null,
+    /** Image height in pixels (default 630). */
+    val height: Int? = null,
+    /** Image format. */
+    val format: ScreenshotFormat? = null,
+    /** JPEG/WEBP quality 0–100. */
+    val quality: Int? = null,
+)
+
+// ── Storage namespace ─────────────────────────────────────────────────────────
+
+/**
+ * Options for `GET /v1/storage/files`.
+ */
+@Serializable
+data class StorageListOptions(
+    /** Maximum number of files to return. */
+    val limit: Int? = null,
+    /** Pagination cursor (file ID). */
+    val after: String? = null,
+)
+
+/**
+ * Options for `DELETE /v1/storage/files/{id}`.
+ */
+@Serializable
+data class StorageDeleteOptions(
+    /** The file ID to delete. Required. */
+    val id: String,
+)
+
+// ── Scheduled namespace ───────────────────────────────────────────────────────
+
+/**
+ * Options for `POST /v1/scheduled`.
+ *
+ * ```kotlin
+ * val opts = ScheduleOptions(
+ *     url      = "https://example.com",
+ *     interval = ScheduleInterval.DAILY,
+ *     action   = "screenshot",
+ * )
+ * ```
+ */
+@Serializable
+data class ScheduleOptions(
+    /** The URL to capture on schedule. Required. */
+    val url: String,
+    /** Recurrence interval. */
+    val interval: ScheduleInterval? = null,
+    /** Cron expression for custom schedules (alternative to [interval]). */
+    val cron: String? = null,
+    /** The action to perform: `"screenshot"`, `"scrape"`, `"extract"`, `"pdf"`. */
+    val action: String? = null,
+    /** Webhook URL to notify on each completion. */
+    val webhookUrl: String? = null,
+    /** Whether the schedule is active. Defaults to `true`. */
+    val active: Boolean? = null,
+)
+
+/**
+ * Options for updating an existing scheduled task via `PATCH /v1/scheduled/{id}`.
+ */
+@Serializable
+data class ScheduleUpdateOptions(
+    /** New cron expression. */
+    val cron: String? = null,
+    /** New recurrence interval. */
+    val interval: ScheduleInterval? = null,
+    /** New webhook URL. */
+    val webhookUrl: String? = null,
+    /** Activate or deactivate the schedule. */
+    val active: Boolean? = null,
+)
+
+// ── Webhooks namespace ────────────────────────────────────────────────────────
+
+/**
+ * Options for `POST /v1/webhooks`.
+ *
+ * ```kotlin
+ * val opts = WebhookOptions(
+ *     url    = "https://myapp.com/hooks/snapapi",
+ *     events = listOf(WebhookEvent.SCREENSHOT_COMPLETED),
+ * )
+ * ```
+ */
+@Serializable
+data class WebhookOptions(
+    /** The HTTPS URL to receive webhook payloads. Required. */
+    val url: String,
+    /** List of events to subscribe to. */
+    val events: List<WebhookEvent>? = null,
+    /** Optional secret for payload signature verification. */
+    val secret: String? = null,
+    /** Whether this webhook is active. Defaults to `true`. */
+    val active: Boolean? = null,
+)
+
+/**
+ * Options for updating an existing webhook via `PATCH /v1/webhooks/{id}`.
+ */
+@Serializable
+data class WebhookUpdateOptions(
+    /** New target URL. */
+    val url: String? = null,
+    /** New event list. */
+    val events: List<WebhookEvent>? = null,
+    /** New secret. */
+    val secret: String? = null,
+    /** Activate or deactivate the webhook. */
+    val active: Boolean? = null,
+)
+
+// ── API Keys namespace ─────────────────────────────────────────────────────────
+
+/**
+ * Options for `POST /v1/api-keys`.
+ *
+ * ```kotlin
+ * val opts = ApiKeyOptions(
+ *     name   = "CI pipeline key",
+ *     scopes = listOf(ApiKeyScope.SCREENSHOT),
+ * )
+ * ```
+ */
+@Serializable
+data class ApiKeyOptions(
+    /** Human-readable label for this key. Required. */
+    val name: String,
+    /** Permission scopes. Defaults to `[ApiKeyScope.FULL]`. */
+    val scopes: List<ApiKeyScope>? = null,
+    /** Expiry date-time in ISO 8601 format. `null` = never expires. */
+    val expiresAt: String? = null,
+)
+
+/**
+ * Options for updating an existing API key via `PATCH /v1/api-keys/{id}`.
+ */
+@Serializable
+data class ApiKeyUpdateOptions(
+    /** New label. */
+    val name: String? = null,
+    /** New scopes. */
+    val scopes: List<ApiKeyScope>? = null,
+    /** New expiry. `null` = never expires. */
+    val expiresAt: String? = null,
+    /** Activate or deactivate this key. */
+    val active: Boolean? = null,
 )
