@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Authorization: Bearer` header sent alongside `X-Api-Key` for maximum server compatibility
 
 ### Changed
-- API base URL corrected to `https://snapapi.pics` (was `https://api.snapapi.pics`)
+- API base URL confirmed as `https://api.snapapi.pics`
 - `getUsage()` is now the primary method (calls `GET /v1/usage`); `quota()` is the alias
 - User-Agent updated to `snapapi-kotlin/3.1.0`
 
