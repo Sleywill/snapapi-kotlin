@@ -4,9 +4,11 @@
 [![CI](https://github.com/Sleywill/snapapi-kotlin/actions/workflows/ci.yml/badge.svg)](https://github.com/Sleywill/snapapi-kotlin/actions)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 
-Official Kotlin SDK for [SnapAPI.pics](https://snapapi.pics) -- screenshot, scrape, extract, analyze, and PDF generation as a service.
+Official Kotlin SDK for [SnapAPI.pics](https://snapapi.pics) -- screenshot, scrape, extract, analyze, PDF, video, and OG image generation as a service.
 
-**v3.0.0** -- Sealed exception hierarchy, typed enums, retry with exponential backoff.
+**v3.1.0** -- Full endpoint coverage, sealed exception hierarchy, Storage/Scheduled/Webhooks/APIKeys namespaces, retry with exponential backoff.
+
+**Base URL:** `https://api.snapapi.pics`
 
 ## Requirements
 
@@ -22,7 +24,7 @@ Official Kotlin SDK for [SnapAPI.pics](https://snapapi.pics) -- screenshot, scra
 
 ```kotlin
 dependencies {
-    implementation("pics.snapapi:snapapi-kotlin:3.0.0")
+    implementation("pics.snapapi:snapapi-kotlin:3.1.0")
 }
 ```
 
@@ -32,7 +34,7 @@ dependencies {
 <dependency>
     <groupId>pics.snapapi</groupId>
     <artifactId>snapapi-kotlin</artifactId>
-    <version>3.0.0</version>
+    <version>3.1.0</version>
 </dependency>
 ```
 
@@ -64,16 +66,27 @@ val md = client.extractMarkdown("https://example.com")
 
 // PDF
 val pdf = client.pdf(PdfOptions(url = "https://example.com"))
+File("page.pdf").writeBytes(pdf)
+
+// OG Image
+val og = client.ogImage(OgImageOptions(url = "https://example.com"))
+File("og.png").writeBytes(og)
 
 // Analyze (LLM-powered)
 val analysis = client.analyze(AnalyzeOptions(
-    url = "https://example.com",
-    prompt = "Summarize this page"
+    url    = "https://example.com",
+    prompt = "Summarize this page",
 ))
 
 // Usage / Quota
 val q = client.getUsage()
 println("Used: ${q.used}/${q.total}")
+```
+
+The `SnapAPI` typealias is also available if you prefer that name:
+
+```kotlin
+val client = SnapAPI(apiKey = "sk_your_key")
 ```
 
 ## Endpoints
@@ -97,9 +110,10 @@ Capture from raw HTML or Markdown:
 
 ```kotlin
 val png = client.screenshot(ScreenshotOptions(html = "<h1>Hello</h1>"))
+val png = client.screenshot(ScreenshotOptions(markdown = "# Hello World"))
 ```
 
-Save directly to a file:
+Write directly to a file:
 
 ```kotlin
 val bytesWritten = client.screenshotToFile(
@@ -109,17 +123,33 @@ val bytesWritten = client.screenshotToFile(
 println("Wrote $bytesWritten bytes")
 ```
 
+Upload to storage (returns URL):
+
+```kotlin
+val uploaded = client.screenshotToStorage(
+    ScreenshotOptions(
+        url     = "https://example.com",
+        storage = StorageDestination(destination = "s3"),
+    )
+)
+println("Stored at: ${uploaded.url}")
+```
+
 ### PDF -- `POST /v1/pdf`
 
 ```kotlin
 val pdfBytes = client.pdf(
     PdfOptions(
         url        = "https://example.com",
-        pageFormat = PDFPageFormat.A4,  // A4 | LETTER | A3 | LEGAL | TABLOID
+        pageFormat = PDFPageFormat.A4,      // A4 | LETTER | A3 | A5 | LEGAL | TABLOID
         landscape  = false,
+        wait       = 1000,
     )
 )
 File("page.pdf").writeBytes(pdfBytes)
+
+// Write directly to a file
+client.pdfToFile(PdfOptions(url = "https://example.com"), File("page.pdf"))
 ```
 
 ### Scrape -- `POST /v1/scrape`
@@ -129,7 +159,8 @@ val result = client.scrape(
     ScrapeOptions(
         url      = "https://example.com",
         selector = "article",
-        wait     = 1000,   // ms to wait for dynamic content
+        wait     = 1000,    // ms to wait for dynamic content
+        pages    = 3,       // paginate through up to 3 pages
     )
 )
 result.results.forEach { item ->
@@ -160,18 +191,53 @@ val result = client.extract(
 
 ### Analyze -- `POST /v1/analyze`
 
-Uses an LLM provider to analyze webpage content. This endpoint may return
-HTTP 503 when LLM credits are exhausted on the server.
+Uses an LLM provider to analyze webpage content. May return HTTP 503 when
+LLM credits are exhausted on the server.
 
 ```kotlin
 val result = client.analyze(
     AnalyzeOptions(
         url      = "https://example.com",
         prompt   = "Summarize the main points of this page",
-        provider = AnalyzeProvider.OPENAI,
+        provider = AnalyzeProvider.OPENAI,    // OPENAI | ANTHROPIC | GOOGLE
     )
 )
 println(result.result)
+```
+
+### Video -- `POST /v1/video`
+
+```kotlin
+// Raw bytes
+val bytes = client.video(
+    VideoOptions(
+        url         = "https://example.com",
+        format      = VideoFormat.MP4,       // MP4 | WEBM | GIF
+        duration    = 5000,
+        scrolling   = true,
+        scrollSpeed = 200,
+        blockAds    = true,
+    )
+)
+File("recording.mp4").writeBytes(bytes)
+
+// Structured response with metadata
+val result = client.videoResult(VideoOptions(url = "https://example.com"))
+println("${result.width}x${result.height}, ${result.duration}ms")
+```
+
+### OG Image -- `POST /v1/og-image`
+
+```kotlin
+val bytes = client.ogImage(
+    OgImageOptions(
+        url    = "https://example.com",
+        width  = 1200,
+        height = 630,
+        format = ScreenshotFormat.PNG,
+    )
+)
+File("og.png").writeBytes(bytes)
 ```
 
 ### Usage -- `GET /v1/usage`
@@ -180,6 +246,101 @@ println(result.result)
 val usage = client.getUsage()
 println("Used: ${usage.used} / ${usage.total} -- ${usage.remaining} remaining")
 println("Resets: ${usage.resetAt}")
+
+// quota() is an alias
+val q = client.quota()
+```
+
+### Ping -- `GET /v1/ping`
+
+```kotlin
+val pong = client.ping()
+println("API status: ${pong.status}")
+```
+
+## Namespaced APIs
+
+### Storage -- `client.storage`
+
+```kotlin
+// List stored files
+val files = client.storage.list(StorageListOptions(limit = 20))
+files.files.forEach { println("${it.id}: ${it.url}") }
+
+// Get a single file
+val file = client.storage.get("file_abc123")
+
+// Delete a file
+val deleted = client.storage.delete("file_abc123")
+```
+
+### Scheduled Captures -- `client.scheduled`
+
+```kotlin
+// Create a daily screenshot task
+val task = client.scheduled.create(
+    ScheduleOptions(
+        url        = "https://example.com",
+        interval   = ScheduleInterval.DAILY,   // HOURLY | DAILY | WEEKLY | MONTHLY
+        action     = "screenshot",
+        webhookUrl = "https://myapp.com/hooks/snapapi",
+    )
+)
+println("Created task: ${task.id}")
+
+// List all tasks
+val tasks = client.scheduled.list()
+
+// Update (pause) a task
+client.scheduled.update(task.id, ScheduleUpdateOptions(active = false))
+
+// Delete
+client.scheduled.delete(task.id)
+```
+
+### Webhooks -- `client.webhooks`
+
+```kotlin
+// Register a webhook
+val hook = client.webhooks.create(
+    WebhookOptions(
+        url    = "https://myapp.com/hooks/snapapi",
+        events = listOf(WebhookEvent.SCREENSHOT_COMPLETED, WebhookEvent.SCRAPE_COMPLETED),
+        secret = "my_signing_secret",
+    )
+)
+println("Webhook: ${hook.id}")
+
+// List all webhooks
+val hooks = client.webhooks.list()
+
+// Update
+client.webhooks.update(hook.id, WebhookUpdateOptions(active = false))
+
+// Delete
+client.webhooks.delete(hook.id)
+```
+
+### API Keys -- `client.apiKeys`
+
+```kotlin
+// Create a scoped key
+val key = client.apiKeys.create(
+    ApiKeyOptions(
+        name   = "CI pipeline key",
+        scopes = listOf(ApiKeyScope.SCREENSHOT, ApiKeyScope.PDF),
+    )
+)
+println("Full key (save this!): ${key.fullKey}")
+
+// List all keys
+val keys = client.apiKeys.list()
+
+// Rename / change scopes
+client.apiKeys.update(key.id, ApiKeyUpdateOptions(name = "renamed key"))
+
+// Revoke
+client.apiKeys.revoke(key.id)
 ```
 
 ## Error Handling
@@ -193,13 +354,13 @@ try {
     val bytes = client.screenshot(opts)
 } catch (e: SnapAPIException) {
     when (e) {
-        is SnapAPIException.Unauthorized  -> println("Invalid API key")
-        is SnapAPIException.RateLimited   -> delay(e.retryAfterMs)
-        is SnapAPIException.QuotaExceeded -> println("Upgrade plan at snapapi.pics/dashboard")
-        is SnapAPIException.ServerError   -> println("HTTP ${e.statusCode} [${e.errorCode}]: ${e.message}")
-        is SnapAPIException.NetworkError  -> println("Network error: ${e.message}")
-        is SnapAPIException.InvalidParams -> println("Bad parameters: ${e.message}")
-        is SnapAPIException.DecodingError -> println("Decode failed: ${e.message}")
+        is SnapAPIException.AuthenticationException -> println("Invalid API key")
+        is SnapAPIException.RateLimitException      -> delay(e.retryAfterMs)
+        is SnapAPIException.QuotaExceededException  -> println("Upgrade plan at snapapi.pics/dashboard")
+        is SnapAPIException.ValidationException     -> println("Bad fields: ${e.fields}")
+        is SnapAPIException.ServerException         -> println("HTTP ${e.statusCode} [${e.errorCode}]: ${e.message}")
+        is SnapAPIException.NetworkException        -> println("Network error: ${e.message}")
+        is SnapAPIException.DecodingError           -> println("Decode failed: ${e.message}")
     }
 }
 ```
@@ -225,13 +386,14 @@ val client = SnapAPIClient(
     apiKey      = "sk_...",
     retryPolicy = RetryPolicy(
         maxAttempts = 5,
-        baseDelayMs = 2_000L,  // 2 s for first retry
-        maxDelayMs  = 60_000L  // cap at 60 s
+        baseDelayMs = 2_000L,   // 2 s for first retry
+        maxDelayMs  = 60_000L,  // cap at 60 s
     )
 )
 
-// Disable retries
-val strict = SnapAPIClient(apiKey = "sk_...", retryPolicy = RetryPolicy.NEVER)
+// Pre-built policies
+val noRetry    = SnapAPIClient(apiKey = "sk_...", retryPolicy = RetryPolicy.NEVER)
+val aggressive = SnapAPIClient(apiKey = "sk_...", retryPolicy = RetryPolicy.AGGRESSIVE) // 5 retries
 ```
 
 ## Custom OkHttpClient
@@ -242,9 +404,24 @@ import java.util.concurrent.TimeUnit
 
 val ok = OkHttpClient.Builder()
     .readTimeout(120, TimeUnit.SECONDS)
+    .addInterceptor { chain ->
+        // custom logging, etc.
+        chain.proceed(chain.request())
+    }
     .build()
 
 val client = SnapAPIClient(apiKey = "sk_...", okHttpClient = ok)
+```
+
+## Java Interop
+
+The constructor is annotated with `@JvmOverloads`, so you can use it from Java:
+
+```java
+SnapAPIClient client = new SnapAPIClient("sk_your_key");
+
+// All suspend functions are usable via kotlinx-coroutines-jdk8 / rx adapters.
+// From Java, wrap with runBlocking or use a CoroutineScope adapter.
 ```
 
 ## Android Use Cases
@@ -271,12 +448,11 @@ class MyViewModel : ViewModel() {
 Competitive intelligence pipeline:
 
 ```kotlin
-// Capture competitor pages in parallel
 coroutineScope {
     val jobs = competitors.map { url ->
         async {
             val bytes = client.screenshot(ScreenshotOptions(url = url, fullPage = true))
-            File("output/${url.host}.png").writeBytes(bytes)
+            File("output/${URI(url).host}.png").writeBytes(bytes)
         }
     }
     jobs.awaitAll()

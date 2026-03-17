@@ -37,48 +37,49 @@ class ErrorTest {
     // ── isRetryable ───────────────────────────────────────────────────────────
 
     @Test
-    fun `RateLimited isRetryable`() {
-        val ex = SnapAPIException.RateLimited(retryAfterMs = 5_000L)
+    fun `RateLimitException isRetryable`() {
+        val ex = SnapAPIException.RateLimitException(retryAfter = 5)
         assertTrue(ex.isRetryable)
     }
 
     @Test
-    fun `NetworkError isRetryable`() {
-        val ex = SnapAPIException.NetworkError("timeout")
+    fun `NetworkException isRetryable`() {
+        val ex = SnapAPIException.NetworkException("timeout")
         assertTrue(ex.isRetryable)
     }
 
     @Test
-    fun `ServerError 5xx isRetryable`() {
-        val ex = SnapAPIException.ServerError(500, "INTERNAL_ERROR", "oops")
-        assertTrue(ex.isRetryable)
+    fun `ServerException 5xx isRetryable`() {
+        val ex500 = SnapAPIException.ServerException(500, "INTERNAL_ERROR", "oops")
+        assertTrue(ex500.isRetryable)
 
-        val ex503 = SnapAPIException.ServerError(503, "UNAVAILABLE", "down")
+        val ex503 = SnapAPIException.ServerException(503, "UNAVAILABLE", "down")
         assertTrue(ex503.isRetryable)
     }
 
     @Test
-    fun `ServerError 4xx not retryable`() {
-        val ex400 = SnapAPIException.ServerError(400, "BAD_REQUEST", "bad")
+    fun `ServerException 4xx not retryable`() {
+        val ex400 = SnapAPIException.ServerException(400, "BAD_REQUEST", "bad")
         assertFalse(ex400.isRetryable)
 
-        val ex404 = SnapAPIException.ServerError(404, "NOT_FOUND", "nope")
+        val ex404 = SnapAPIException.ServerException(404, "NOT_FOUND", "nope")
         assertFalse(ex404.isRetryable)
     }
 
     @Test
-    fun `Unauthorized not retryable`() {
-        assertFalse(SnapAPIException.Unauthorized().isRetryable)
+    fun `AuthenticationException not retryable`() {
+        assertFalse(SnapAPIException.AuthenticationException().isRetryable)
     }
 
     @Test
-    fun `QuotaExceeded not retryable`() {
-        assertFalse(SnapAPIException.QuotaExceeded().isRetryable)
+    fun `QuotaExceededException not retryable`() {
+        assertFalse(SnapAPIException.QuotaExceededException().isRetryable)
     }
 
     @Test
-    fun `InvalidParams not retryable`() {
-        assertFalse(SnapAPIException.InvalidParams("url required").isRetryable)
+    fun `ValidationException not retryable`() {
+        val ex = SnapAPIException.ValidationException(mapOf("url" to "required"))
+        assertFalse(ex.isRetryable)
     }
 
     @Test
@@ -89,49 +90,142 @@ class ErrorTest {
     // ── retryDelayMs ─────────────────────────────────────────────────────────
 
     @Test
-    fun `RateLimited carries retryAfterMs`() {
-        val ex = SnapAPIException.RateLimited(retryAfterMs = 30_000L)
+    fun `RateLimitException carries retryAfterMs`() {
+        val ex = SnapAPIException.RateLimitException(retryAfter = 30)
+        assertEquals(30_000L, ex.retryAfterMs)
         assertEquals(30_000L, ex.retryDelayMs)
     }
 
     @Test
+    fun `RateLimitException with null retryAfter uses 60s fallback`() {
+        val ex = SnapAPIException.RateLimitException(retryAfter = null)
+        assertEquals(60_000L, ex.retryAfterMs)
+    }
+
+    @Test
     fun `other exceptions have null retryDelayMs`() {
-        assertNull(SnapAPIException.Unauthorized().retryDelayMs)
-        assertNull(SnapAPIException.ServerError(500, "E", "msg").retryDelayMs)
+        assertNull(SnapAPIException.AuthenticationException().retryDelayMs)
+        assertNull(SnapAPIException.ServerException(500, "E", "msg").retryDelayMs)
+        assertNull(SnapAPIException.QuotaExceededException().retryDelayMs)
+    }
+
+    // ── ValidationException fields ───────────────────────────────────────────
+
+    @Test
+    fun `ValidationException carries field errors`() {
+        val fields = mapOf("url" to "must not be blank", "format" to "unsupported")
+        val ex = SnapAPIException.ValidationException(fields)
+        assertEquals("must not be blank", ex.fields["url"])
+        assertEquals("unsupported",        ex.fields["format"])
+    }
+
+    @Test
+    fun `ValidationException empty fields by default`() {
+        val ex = SnapAPIException.ValidationException()
+        assertTrue(ex.fields.isEmpty())
+    }
+
+    // ── Backward-compat types ─────────────────────────────────────────────────
+
+    @Test
+    fun `legacy RateLimited isRetryable`() {
+        val ex = SnapAPIException.RateLimited(retryAfterMs = 5_000L)
+        assertTrue(ex.isRetryable)
+        assertEquals(5_000L, ex.retryDelayMs)
+    }
+
+    @Test
+    fun `legacy NetworkError isRetryable`() {
+        val ex = SnapAPIException.NetworkError("timeout")
+        assertTrue(ex.isRetryable)
+    }
+
+    @Test
+    fun `legacy ServerError 5xx isRetryable`() {
+        val ex = SnapAPIException.ServerError(500, "INTERNAL_ERROR", "oops")
+        assertTrue(ex.isRetryable)
+    }
+
+    @Test
+    fun `legacy Unauthorized not retryable`() {
+        assertFalse(SnapAPIException.Unauthorized().isRetryable)
+    }
+
+    @Test
+    fun `legacy QuotaExceeded not retryable`() {
+        assertFalse(SnapAPIException.QuotaExceeded().isRetryable)
+    }
+
+    @Test
+    fun `legacy InvalidParams not retryable`() {
+        assertFalse(SnapAPIException.InvalidParams("url required").isRetryable)
     }
 
     // ── HTTP status code mapping ───────────────────────────────────────────────
 
     @Test
-    fun `403 maps to Unauthorized`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(403))
-        assertFailsWith<SnapAPIException.Unauthorized> {
+    fun `401 maps to AuthenticationException`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(401))
+        assertFailsWith<SnapAPIException.AuthenticationException> {
             client.screenshot(ScreenshotOptions(url = "https://example.com"))
         }
     }
 
     @Test
-    fun `422 maps to ServerError`() = runTest {
+    fun `403 maps to AuthenticationException`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(403))
+        assertFailsWith<SnapAPIException.AuthenticationException> {
+            client.screenshot(ScreenshotOptions(url = "https://example.com"))
+        }
+    }
+
+    @Test
+    fun `422 maps to ValidationException`() = runTest {
         server.enqueue(
             MockResponse()
                 .setResponseCode(422)
-                .setBody("""{"error":"UNPROCESSABLE","message":"Invalid input"}""")
+                .setBody("""{"error":"UNPROCESSABLE","message":"Invalid input","fields":{"url":"required"}}"""),
         )
-        val ex = assertFailsWith<SnapAPIException.ServerError> {
+        val ex = assertFailsWith<SnapAPIException.ValidationException> {
             client.screenshot(ScreenshotOptions(url = "https://example.com"))
         }
-        assertEquals(422, ex.statusCode)
-        assertEquals("UNPROCESSABLE", ex.errorCode)
+        assertEquals("required", ex.fields["url"])
     }
 
     @Test
-    fun `429 without Retry-After header uses fallback delay`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(429))
-        val ex = assertFailsWith<SnapAPIException.RateLimited> {
+    fun `500 maps to ServerException`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(500)
+                .setBody("""{"error":"INTERNAL_ERROR","message":"oops"}"""),
+        )
+        val ex = assertFailsWith<SnapAPIException.ServerException> {
             client.screenshot(ScreenshotOptions(url = "https://example.com"))
         }
-        // fallback is 60_000 ms
-        assertEquals(60_000L, ex.retryAfterMs)
+        assertEquals(500,              ex.statusCode)
+        assertEquals("INTERNAL_ERROR", ex.errorCode)
+    }
+
+    @Test
+    fun `429 with Retry-After maps to RateLimitException`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(429)
+                .addHeader("Retry-After", "30"),
+        )
+        val ex = assertFailsWith<SnapAPIException.RateLimitException> {
+            client.screenshot(ScreenshotOptions(url = "https://example.com"))
+        }
+        assertEquals(30, ex.retryAfter)
+    }
+
+    @Test
+    fun `429 without Retry-After header has null retryAfter`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(429))
+        val ex = assertFailsWith<SnapAPIException.RateLimitException> {
+            client.screenshot(ScreenshotOptions(url = "https://example.com"))
+        }
+        assertNull(ex.retryAfter)
     }
 
     // ── RetryPolicy ───────────────────────────────────────────────────────────
@@ -139,24 +233,26 @@ class ErrorTest {
     @Test
     fun `NEVER policy does not retry`() {
         val policy = RetryPolicy.NEVER
-        assertFalse(policy.shouldRetry(SnapAPIException.RateLimited(1000L), attempt = 0))
+        assertFalse(policy.shouldRetry(SnapAPIException.RateLimitException(5), attempt = 0))
     }
 
     @Test
     fun `default policy retries up to 3 times`() {
         val policy  = RetryPolicy.DEFAULT
-        val rateLim = SnapAPIException.RateLimited(1000L)
+        val rateLim = SnapAPIException.RateLimitException(1)
         assertTrue(policy.shouldRetry(rateLim, attempt = 0))
         assertTrue(policy.shouldRetry(rateLim, attempt = 2))
         assertFalse(policy.shouldRetry(rateLim, attempt = 3))
     }
 
     @Test
-    fun `exponential backoff doubles each attempt`() {
+    fun `exponential backoff grows each attempt`() {
         val policy = RetryPolicy(baseDelayMs = 1_000L, maxDelayMs = 60_000L)
         val d0 = policy.delayMs(0)
         val d1 = policy.delayMs(1)
-        assertTrue(d1 > d0)
+        val d2 = policy.delayMs(2)
+        assertTrue(d1 > d0, "delay should grow: d0=$d0 d1=$d1")
+        assertTrue(d2 > d1, "delay should grow: d1=$d1 d2=$d2")
     }
 
     @Test
@@ -173,6 +269,14 @@ class ErrorTest {
         assertTrue(delay <= 5_000L)
     }
 
+    @Test
+    fun `AGGRESSIVE policy has 5 retries`() {
+        val policy  = RetryPolicy.AGGRESSIVE
+        val rateLim = SnapAPIException.RateLimitException(1)
+        assertTrue(policy.shouldRetry(rateLim, attempt = 4))
+        assertFalse(policy.shouldRetry(rateLim, attempt = 5))
+    }
+
     // ── Retry integration ─────────────────────────────────────────────────────
 
     @Test
@@ -186,7 +290,7 @@ class ErrorTest {
         // First call: 500, second call: 200
         server.enqueue(MockResponse().setResponseCode(500).setBody("{}"))
         server.enqueue(
-            MockResponse().setBody("""{"used":10,"total":100,"remaining":90}""")
+            MockResponse().setBody("""{"used":10,"total":100,"remaining":90}"""),
         )
         val q = retryClient.quota()
         assertEquals(10, q.used)
@@ -198,7 +302,15 @@ class ErrorTest {
     @Test
     fun `client does not retry on 401`() = runTest {
         server.enqueue(MockResponse().setResponseCode(401))
-        assertFailsWith<SnapAPIException.Unauthorized> {
+        assertFailsWith<SnapAPIException.AuthenticationException> {
+            client.quota()
+        }
+    }
+
+    @Test
+    fun `client does not retry on 402`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(402))
+        assertFailsWith<SnapAPIException.QuotaExceededException> {
             client.quota()
         }
     }

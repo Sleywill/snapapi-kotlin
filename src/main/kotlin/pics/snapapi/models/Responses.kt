@@ -3,9 +3,9 @@ package pics.snapapi.models
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
-// ── Quota ─────────────────────────────────────────────────────────────────────
+// ── Quota / Usage ─────────────────────────────────────────────────────────────
 
-/** Returned by `GET /v1/quota`. */
+/** Returned by `GET /v1/usage` and `GET /v1/quota`. */
 @Serializable
 data class QuotaResult(
     /** Number of API calls used in the current billing period. */
@@ -114,6 +114,140 @@ data class AnalyzeResult(
     val url: String,
 )
 
+// ── Storage namespace ─────────────────────────────────────────────────────────
+
+/** A file stored in SnapAPI's storage backend. */
+@Serializable
+data class StorageFile(
+    /** Unique file identifier. */
+    val id: String,
+    /** Public URL. */
+    val url: String,
+    /** MIME type (e.g. `"image/png"`). */
+    val mimeType: String? = null,
+    /** File size in bytes. */
+    val size: Int? = null,
+    /** ISO 8601 creation timestamp. */
+    val createdAt: String? = null,
+)
+
+/** Returned by `GET /v1/storage/files`. */
+@Serializable
+data class StorageListResult(
+    /** List of stored files. */
+    val files: List<StorageFile>,
+    /** Whether there are more pages of results. */
+    val hasMore: Boolean = false,
+    /** Cursor for the next page (`after` parameter). */
+    val nextCursor: String? = null,
+)
+
+/** Returned by `DELETE /v1/storage/files/{id}`. */
+@Serializable
+data class StorageDeleteResult(
+    /** Whether the deletion succeeded. */
+    val success: Boolean,
+    /** The ID that was deleted. */
+    val id: String,
+)
+
+// ── Scheduled namespace ───────────────────────────────────────────────────────
+
+/** A scheduled capture task. */
+@Serializable
+data class ScheduledTask(
+    /** Unique task identifier. */
+    val id: String,
+    /** Target URL. */
+    val url: String,
+    /** The action performed (e.g. `"screenshot"`). */
+    val action: String? = null,
+    /** Cron expression. */
+    val cron: String? = null,
+    /** Human-readable interval. */
+    val interval: String? = null,
+    /** Webhook notification URL. */
+    val webhookUrl: String? = null,
+    /** Whether the task is currently active. */
+    val active: Boolean,
+    /** ISO 8601 timestamp of the next run. */
+    val nextRunAt: String? = null,
+    /** ISO 8601 creation timestamp. */
+    val createdAt: String? = null,
+)
+
+/** Returned by `GET /v1/scheduled`. */
+@Serializable
+data class ScheduledListResult(
+    /** All scheduled tasks for this account. */
+    val tasks: List<ScheduledTask>,
+)
+
+/** Generic operation result. */
+@Serializable
+data class OperationResult(
+    /** Whether the operation succeeded. */
+    val success: Boolean,
+    /** Optional message from the server. */
+    val message: String? = null,
+)
+
+// ── Webhooks namespace ────────────────────────────────────────────────────────
+
+/** A registered webhook. */
+@Serializable
+data class Webhook(
+    /** Unique webhook identifier. */
+    val id: String,
+    /** Target HTTPS URL. */
+    val url: String,
+    /** Subscribed event types. */
+    val events: List<String> = emptyList(),
+    /** Whether the webhook is active. */
+    val active: Boolean,
+    /** ISO 8601 creation timestamp. */
+    val createdAt: String? = null,
+)
+
+/** Returned by `GET /v1/webhooks`. */
+@Serializable
+data class WebhookListResult(
+    /** All webhooks for this account. */
+    val webhooks: List<Webhook>,
+)
+
+// ── API Keys namespace ─────────────────────────────────────────────────────────
+
+/** An API key belonging to the account. */
+@Serializable
+data class ApiKey(
+    /** Unique key identifier. */
+    val id: String,
+    /** Human-readable label. */
+    val name: String,
+    /** Partially masked key value (e.g. `"sk_live_****abcd"`). */
+    val key: String? = null,
+    /** Full key value — only present immediately after creation. */
+    val fullKey: String? = null,
+    /** Permission scopes. */
+    val scopes: List<String> = emptyList(),
+    /** Whether this key is currently active. */
+    val active: Boolean,
+    /** ISO 8601 expiry timestamp, or `null` if it never expires. */
+    val expiresAt: String? = null,
+    /** ISO 8601 creation timestamp. */
+    val createdAt: String? = null,
+    /** ISO 8601 timestamp of last use, or `null`. */
+    val lastUsedAt: String? = null,
+)
+
+/** Returned by `GET /v1/api-keys`. */
+@Serializable
+data class ApiKeyListResult(
+    /** All API keys for this account. */
+    val keys: List<ApiKey>,
+)
+
 // ── Internal error body ───────────────────────────────────────────────────────
 
 @Serializable
@@ -121,4 +255,5 @@ internal data class ApiErrorBody(
     val statusCode: Int? = null,
     val error: String? = null,
     val message: String? = null,
+    val fields: Map<String, String>? = null,
 )

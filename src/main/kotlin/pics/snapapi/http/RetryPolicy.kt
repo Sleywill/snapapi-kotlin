@@ -8,14 +8,18 @@ import kotlin.math.pow
  * Configures how the SDK retries failed requests.
  *
  * The default policy retries up to **3 times** with exponential backoff and
- * always honours the `Retry-After` header value from [SnapAPIException.RateLimited].
+ * always honours the `Retry-After` header value from
+ * [SnapAPIException.RateLimitException].
  *
  * ```kotlin
  * // Custom policy: 5 retries, 2 s base delay
  * val client = SnapAPIClient(
- *     apiKey = "sk_...",
+ *     apiKey      = "sk_...",
  *     retryPolicy = RetryPolicy(maxAttempts = 5, baseDelayMs = 2_000L)
  * )
+ *
+ * // Disable retries entirely
+ * val strict = SnapAPIClient(apiKey = "sk_...", retryPolicy = RetryPolicy.NEVER)
  * ```
  */
 data class RetryPolicy(
@@ -28,17 +32,25 @@ data class RetryPolicy(
 ) {
     companion object {
         /** The default policy used by [pics.snapapi.SnapAPIClient]. */
+        @JvmField
         val DEFAULT = RetryPolicy()
 
         /** A policy that never retries. */
+        @JvmField
         val NEVER = RetryPolicy(maxAttempts = 0)
+
+        /** A policy suitable for batch/background processing. */
+        @JvmField
+        val AGGRESSIVE = RetryPolicy(maxAttempts = 5, baseDelayMs = 2_000L, maxDelayMs = 60_000L)
     }
 
     /**
      * Returns the delay in milliseconds before attempt number [attempt]
-     * (0-based, so 0 = first retry).
+     * (0-based: 0 = first retry).
      *
-     * If [overrideMs] is provided (from a `Retry-After` header) it takes precedence.
+     * If [overrideMs] is provided (from a `Retry-After` header) it takes
+     * precedence over the exponential calculation but is still capped at
+     * [maxDelayMs].
      */
     fun delayMs(attempt: Int, overrideMs: Long? = null): Long {
         if (overrideMs != null) return min(overrideMs, maxDelayMs)

@@ -36,6 +36,8 @@ class ScreenshotTest {
         server.shutdown()
     }
 
+    // ── Validation ────────────────────────────────────────────────────────────
+
     @Test
     fun `screenshot requires source`() = runTest {
         assertFailsWith<IllegalArgumentException> {
@@ -44,7 +46,16 @@ class ScreenshotTest {
     }
 
     @Test
-    fun `screenshot with url succeeds`() = runTest {
+    fun `screenshotToStorage requires storage option`() = runTest {
+        assertFailsWith<IllegalArgumentException> {
+            client.screenshotToStorage(ScreenshotOptions(url = "https://example.com"))
+        }
+    }
+
+    // ── Happy path ────────────────────────────────────────────────────────────
+
+    @Test
+    fun `screenshot with url returns binary bytes`() = runTest {
         val expectedBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47) // PNG header
         server.enqueue(MockResponse().setBody(okio.Buffer().write(expectedBytes)))
 
@@ -52,9 +63,9 @@ class ScreenshotTest {
         assertContentEquals(expectedBytes, result)
 
         val request = server.takeRequest()
-        assertEquals("POST", request.method)
+        assertEquals("POST",           request.method)
         assertEquals("/v1/screenshot", request.path)
-        assertEquals("sk_test", request.getHeader("X-Api-Key"))
+        assertEquals("sk_test",        request.getHeader("X-Api-Key"))
     }
 
     @Test
@@ -72,47 +83,120 @@ class ScreenshotTest {
     }
 
     @Test
-    fun `401 throws Unauthorized`() = runTest {
+    fun `screenshotToFile writes bytes to disk`() = runTest {
+        val imageBytes = byteArrayOf(1, 2, 3, 4, 5)
+        server.enqueue(MockResponse().setBody(okio.Buffer().write(imageBytes)))
+
+        val tempFile = createTempFile()
+        try {
+            val bytesWritten = client.screenshotToFile(
+                ScreenshotOptions(url = "https://example.com"),
+                file = tempFile,
+            )
+            assertEquals(imageBytes.size, bytesWritten)
+            assertContentEquals(imageBytes, tempFile.readBytes())
+        } finally {
+            tempFile.delete()
+        }
+    }
+
+    @Test
+    fun `screenshot sends Authorization header`() = runTest {
+        server.enqueue(MockResponse().setBody(okio.Buffer().write(byteArrayOf(0))))
+        client.screenshot(ScreenshotOptions(url = "https://example.com"))
+
+        val req = server.takeRequest()
+        assertEquals("Bearer sk_test", req.getHeader("Authorization"))
+    }
+
+    @Test
+    fun `screenshot sends User-Agent header`() = runTest {
+        server.enqueue(MockResponse().setBody(okio.Buffer().write(byteArrayOf(0))))
+        client.screenshot(ScreenshotOptions(url = "https://example.com"))
+
+        val req = server.takeRequest()
+        val ua = req.getHeader("User-Agent") ?: ""
+        assert(ua.startsWith("snapapi-kotlin/")) { "User-Agent should start with snapapi-kotlin/" }
+    }
+
+    // ── Error mapping ─────────────────────────────────────────────────────────
+
+    @Test
+    fun `401 throws AuthenticationException`() = runTest {
         server.enqueue(MockResponse().setResponseCode(401))
-        assertFailsWith<SnapAPIException.Unauthorized> {
+        assertFailsWith<SnapAPIException.AuthenticationException> {
             client.screenshot(ScreenshotOptions(url = "https://example.com"))
         }
     }
 
     @Test
-    fun `402 throws QuotaExceeded`() = runTest {
+    fun `403 maps to AuthenticationException`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(403))
+        assertFailsWith<SnapAPIException.AuthenticationException> {
+            client.screenshot(ScreenshotOptions(url = "https://example.com"))
+        }
+    }
+
+    @Test
+    fun `402 throws QuotaExceededException`() = runTest {
         server.enqueue(MockResponse().setResponseCode(402))
-        assertFailsWith<SnapAPIException.QuotaExceeded> {
+        assertFailsWith<SnapAPIException.QuotaExceededException> {
             client.screenshot(ScreenshotOptions(url = "https://example.com"))
         }
     }
 
     @Test
-    fun `429 throws RateLimited with retry delay`() = runTest {
+    fun `429 throws RateLimitException with retry delay`() = runTest {
         server.enqueue(
             MockResponse()
                 .setResponseCode(429)
-                .addHeader("Retry-After", "30")
+                .addHeader("Retry-After", "30"),
         )
-        val ex = assertFailsWith<SnapAPIException.RateLimited> {
+        val ex = assertFailsWith<SnapAPIException.RateLimitException> {
             client.screenshot(ScreenshotOptions(url = "https://example.com"))
         }
-        assertEquals(30_000L, ex.retryAfterMs)
+        assertEquals(30,        ex.retryAfter)
+        assertEquals(30_000L,   ex.retryAfterMs)
     }
 
     @Test
-    fun `500 throws ServerError`() = runTest {
+    fun `429 without Retry-After uses null retryAfter`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(429))
+        val ex = assertFailsWith<SnapAPIException.RateLimitException> {
+            client.screenshot(ScreenshotOptions(url = "https://example.com"))
+        }
+        assertEquals(null, ex.retryAfter)
+        assertEquals(60_000L, ex.retryAfterMs) // fallback: 60s
+    }
+
+    @Test
+    fun `422 throws ValidationException`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(422)
+                .setBody("""{"error":"VALIDATION_ERROR","message":"Invalid","fields":{"url":"must not be blank"}}"""),
+        )
+        val ex = assertFailsWith<SnapAPIException.ValidationException> {
+            client.screenshot(ScreenshotOptions(url = "https://example.com"))
+        }
+        assertEquals("must not be blank", ex.fields["url"])
+    }
+
+    @Test
+    fun `500 throws ServerException`() = runTest {
         server.enqueue(
             MockResponse()
                 .setResponseCode(500)
-                .setBody("""{"error":"INTERNAL_ERROR","message":"Something went wrong"}""")
+                .setBody("""{"error":"INTERNAL_ERROR","message":"Something went wrong"}"""),
         )
-        val ex = assertFailsWith<SnapAPIException.ServerError> {
+        val ex = assertFailsWith<SnapAPIException.ServerException> {
             client.screenshot(ScreenshotOptions(url = "https://example.com"))
         }
-        assertEquals(500, ex.statusCode)
+        assertEquals(500,            ex.statusCode)
         assertEquals("INTERNAL_ERROR", ex.errorCode)
     }
+
+    // ── PDF ───────────────────────────────────────────────────────────────────
 
     @Test
     fun `pdf requires url`() = runTest {
@@ -123,11 +207,36 @@ class ScreenshotTest {
 
     @Test
     fun `pdf request goes to correct endpoint`() = runTest {
-        server.enqueue(MockResponse().setBody(okio.Buffer().write(byteArrayOf(0x25, 0x50, 0x44, 0x46)))) // PDF header
+        server.enqueue(
+            MockResponse().setBody(
+                okio.Buffer().write(byteArrayOf(0x25, 0x50, 0x44, 0x46)), // PDF header
+            ),
+        )
         client.pdf(PdfOptions(url = "https://example.com", pageFormat = PDFPageFormat.A4))
 
         val req = server.takeRequest()
         assertEquals("/v1/pdf", req.path)
-        assertEquals("POST", req.method)
+        assertEquals("POST",    req.method)
     }
+
+    @Test
+    fun `pdfToFile writes bytes to disk`() = runTest {
+        val pdfBytes = byteArrayOf(0x25, 0x50, 0x44, 0x46, 0x2D) // %PDF-
+        server.enqueue(MockResponse().setBody(okio.Buffer().write(pdfBytes)))
+
+        val tempFile = createTempFile()
+        try {
+            val written = client.pdfToFile(PdfOptions(url = "https://example.com"), tempFile)
+            assertEquals(pdfBytes.size, written)
+            assertContentEquals(pdfBytes, tempFile.readBytes())
+        } finally {
+            tempFile.delete()
+        }
+    }
+}
+
+private fun createTempFile(): java.io.File {
+    val f = java.io.File.createTempFile("snapapi_test_", ".bin")
+    f.deleteOnExit()
+    return f
 }

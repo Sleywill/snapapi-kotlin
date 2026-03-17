@@ -13,19 +13,19 @@ import pics.snapapi.exceptions.SnapAPIException
 import pics.snapapi.models.ApiErrorBody
 import java.util.concurrent.TimeUnit
 
-private const val USER_AGENT = "snapapi-kotlin/3.1.0"
-private const val BASE_URL   = "https://api.snapapi.pics"
+internal const val SDK_VERSION = "3.1.0"
+private const val USER_AGENT  = "snapapi-kotlin/$SDK_VERSION"
 
 /**
  * Low-level HTTP client that handles authentication, serialisation, error
  * mapping, and retry logic for the SnapAPI REST API.
  *
- * Callers should use [SnapAPIClient][pics.snapapi.SnapAPIClient] rather than
- * interacting with this class directly.
+ * Callers should use [pics.snapapi.SnapAPIClient] rather than interacting
+ * with this class directly.
  */
 internal class HttpClient(
     private val apiKey: String,
-    private val baseUrl: String = BASE_URL,
+    private val baseUrl: String,
     private val okHttp: OkHttpClient = defaultOkHttp(),
     private val retryPolicy: RetryPolicy = RetryPolicy.DEFAULT,
 ) {
@@ -46,15 +46,22 @@ internal class HttpClient(
         return execute(path, "POST", encoded)
     }
 
-    /** POST with a serialisable body; deserialises the response. */
+    /** POST with a serialisable body; deserialises the response as JSON. */
     suspend inline fun <reified B, reified R> postJson(path: String, body: B): R {
         val bytes = post(path, body)
         return decode(bytes)
     }
 
-    /** GET; deserialises the response. */
+    /** GET; deserialises the response as JSON. */
     suspend inline fun <reified R> getJson(path: String): R {
         val bytes = execute(path, "GET", null)
+        return decode(bytes)
+    }
+
+    /** PATCH with a serialisable body; deserialises the response as JSON. */
+    suspend inline fun <reified B, reified R> patchJson(path: String, body: B): R {
+        val encoded = json.encodeToString(body)
+        val bytes   = execute(path, "PATCH", encoded)
         return decode(bytes)
     }
 
@@ -63,7 +70,13 @@ internal class HttpClient(
         execute(path, "DELETE", null)
     }
 
-    // ── Internals ─────────────────────────────────────────────────────────────
+    /** DELETE; deserialises the response as JSON. */
+    suspend inline fun <reified R> deleteJson(path: String): R {
+        val bytes = execute(path, "DELETE", null)
+        return decode(bytes)
+    }
+
+    // ── Retry loop ────────────────────────────────────────────────────────────
 
     suspend fun execute(path: String, method: String, bodyStr: String?): ByteArray {
         var attempt = 0
@@ -79,13 +92,18 @@ internal class HttpClient(
         }
     }
 
+    // ── Single request ────────────────────────────────────────────────────────
+
     private suspend fun performOnce(path: String, method: String, bodyStr: String?): ByteArray =
         withContext(Dispatchers.IO) {
             val reqBody = bodyStr?.toRequestBody(jsonMediaType)
             val request = Request.Builder()
                 .url("$baseUrl$path")
-                .method(method, if (method == "GET" || method == "DELETE") null else reqBody)
-                .header("X-Api-Key", apiKey)
+                .method(
+                    method,
+                    if (method == "GET" || method == "DELETE") null else reqBody,
+                )
+                .header("X-Api-Key",     apiKey)
                 .header("Authorization", "Bearer $apiKey")
                 .header("Content-Type",  "application/json")
                 .header("Accept",        "*/*")
@@ -95,28 +113,30 @@ internal class HttpClient(
             val response = try {
                 okHttp.newCall(request).execute()
             } catch (e: Exception) {
-                throw SnapAPIException.NetworkError("Network error: ${e.message}", e)
+                throw SnapAPIException.NetworkException("Network error: ${e.message}", e)
             }
 
             val bodyBytes = response.body?.bytes() ?: ByteArray(0)
 
             if (!response.isSuccessful) {
-                val bodyStr2  = bodyBytes.decodeToString()
-                val parsed    = runCatching { json.decodeFromString<ApiErrorBody>(bodyStr2) }.getOrNull()
+                val bodyText = bodyBytes.decodeToString()
+                val parsed   = runCatching {
+                    json.decodeFromString<ApiErrorBody>(bodyText)
+                }.getOrNull()
                 val message   = parsed?.message ?: "HTTP ${response.code}"
                 val errorCode = parsed?.error   ?: "HTTP_ERROR"
+                val fields    = parsed?.fields  ?: emptyMap()
 
                 throw when (response.code) {
-                    401, 403 -> SnapAPIException.Unauthorized()
-                    402      -> SnapAPIException.QuotaExceeded()
+                    401, 403 -> SnapAPIException.AuthenticationException(message)
+                    402      -> SnapAPIException.QuotaExceededException(message)
+                    422      -> SnapAPIException.ValidationException(fields, message)
                     429      -> {
-                        val retryAfterMs = response.header("Retry-After")
-                            ?.toLongOrNull()
-                            ?.times(1000L)
-                            ?: 60_000L
-                        SnapAPIException.RateLimited(retryAfterMs)
+                        val retryAfterSec = response.header("Retry-After")
+                            ?.toIntOrNull()
+                        SnapAPIException.RateLimitException(retryAfterSec, message)
                     }
-                    else -> SnapAPIException.ServerError(
+                    else -> SnapAPIException.ServerException(
                         statusCode = response.code,
                         errorCode  = errorCode,
                         message    = message,
@@ -127,12 +147,19 @@ internal class HttpClient(
             bodyBytes
         }
 
+    // ── Decode ────────────────────────────────────────────────────────────────
+
     internal inline fun <reified R> decode(bytes: ByteArray): R =
         try {
             json.decodeFromString<R>(bytes.decodeToString())
         } catch (e: Exception) {
-            throw SnapAPIException.DecodingError("Failed to decode response: ${e.message}", e)
+            throw SnapAPIException.DecodingError(
+                "Failed to decode response: ${e.message}",
+                e,
+            )
         }
+
+    // ── Factory ───────────────────────────────────────────────────────────────
 
     companion object {
         fun defaultOkHttp(): OkHttpClient = OkHttpClient.Builder()

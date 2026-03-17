@@ -2,7 +2,7 @@
 // Demonstrates SnapAPI usage in an Android app with Jetpack ViewModel.
 //
 // Add to your Android project's build.gradle.kts:
-//   implementation("pics.snapapi:snapapi-kotlin:3.0.0")
+//   implementation("pics.snapapi:snapapi-kotlin:3.1.0")
 //
 // Requires: kotlinx-coroutines-android
 
@@ -72,11 +72,11 @@ class ScreenshotViewModel : ViewModel() {
                 _state.value = State(imageBytes = bytes)
             } catch (e: SnapAPIException) {
                 _state.value = State(error = when (e) {
-                    is SnapAPIException.Unauthorized  -> "Invalid API key"
-                    is SnapAPIException.RateLimited   -> "Rate limited, retry in ${e.retryAfterMs / 1000}s"
-                    is SnapAPIException.QuotaExceeded -> "Quota exceeded, upgrade plan"
-                    is SnapAPIException.ServerError   -> "Server error: ${e.message}"
-                    is SnapAPIException.NetworkError  -> "No internet connection"
+                    is SnapAPIException.AuthenticationException -> "Invalid API key"
+                    is SnapAPIException.RateLimitException      -> "Rate limited, retry in ${e.retryAfterMs / 1000}s"
+                    is SnapAPIException.QuotaExceededException  -> "Quota exceeded, upgrade plan"
+                    is SnapAPIException.ServerException         -> "Server error: ${e.message}"
+                    is SnapAPIException.NetworkException        -> "No internet connection"
                     else -> e.message ?: "Unknown error"
                 })
             }
