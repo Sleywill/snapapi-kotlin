@@ -550,6 +550,15 @@ See the `examples/` directory for complete working examples:
 - **AndroidExample.kt** -- Jetpack ViewModel integration for Android apps
 - **ServerExample.kt** -- Server-side competitive intelligence pipeline
 
+## Links
+
+- [SnapAPI Website](https://snapapi.pics)
+- [API Documentation](https://snapapi.pics/docs)
+- [GitHub Repository](https://github.com/Sleywill/snapapi-kotlin)
+- [JitPack](https://jitpack.io/#Sleywill/snapapi-kotlin)
+- [Changelog](./CHANGELOG.md)
+- [Report Issues](https://github.com/Sleywill/snapapi-kotlin/issues)
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
